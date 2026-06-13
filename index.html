@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FocusFlow — 自适应注意力管理系统</title>
+    
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- WebGazer.js (local copy with face mesh assets) -->
+    <script src="js/webgazer.js"></script>
+    <script src="mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="mediapipe/face_mesh/face_mesh_solution_packed_assets_loader.js"></script>
+    <script src="mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.js"></script>
+    
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- ====== HEADER ====== -->
+    <header class="ff-header">
+        <div class="ff-logo">
+            <span class="ff-logo-icon">🎯</span>
+            <h1>FocusFlow <span class="ff-version">v2.0</span></h1>
+        </div>
+        <div class="ff-header-controls">
+            <button id="btn-toggle-demo" class="ff-btn ff-btn-primary" onclick="toggleDemo()">
+                🖱️ 启动Demo模式
+            </button>
+            <!-- Fix 3: File Import Button -->
+            <input type="file" id="ff-file-input" accept=".txt,.md" style="display:none" onchange="handleFileImport(event)">
+            <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()">
+                📂 导入文件
+            </button>
+            <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()">
+                🔄 重置
+            </button>
+        </div>
+    </header>
+
+    <!-- ====== MAIN LAYOUT: Reading (left) + Dashboard sidebar (right) ====== -->
+    <main class="ff-main-layout">
+        
+        <!-- READING PANEL (Member B) - Left side, takes remaining space -->
+        <section class="ff-reading-panel" id="ff-reading-panel">
+            <div class="ff-reading-header">
+                <h2>📖 阅读区域</h2>
+                <div class="ff-reading-stats">
+                    <span class="ff-reading-stat" id="ff-wpm">-- wpm</span>
+                    <span class="ff-reading-stat" id="ff-attention-score">--%</span>
+                    <span class="ff-reading-stat" id="ff-insight"></span>
+                </div>
+            </div>
+            
+            <!-- The reading content rendered by ReadingView -->
+            <div class="ff-reading-content" id="ff-reading-content">
+                <div class="ff-reading-loading">Loading reading content...</div>
+            </div>
+            
+            <!-- Progress bar -->
+            <div class="ff-reading-progress-bar">
+                <div class="ff-reading-progress-fill" id="ff-reading-progress-fill" style="width: 0%"></div>
+            </div>
+            
+            <!-- Keyword popup container (Member C) -->
+            <div class="ff-keyword-popup" id="ff-keyword-popup" style="display:none;">
+                <div class="ff-keyword-header">
+                    <h3>💡 段落关键词</h3>
+                    <button class="ff-keyword-close" id="ff-keyword-close">&times;</button>
+                </div>
+                <div class="ff-keyword-body" id="ff-keyword-body"></div>
+            </div>
+        </section>
+        
+        <!-- DASHBOARD SIDEBAR (right side - compact essentials only) -->
+        <aside class="ff-dashboard-panel" id="ff-dashboard-panel">
+            
+            <!-- Quick State Card - compact horizontal layout -->
+            <div class="ff-card ff-card-state" id="card-state">
+                <div class="ff-card-header">
+                    <h2>🧠 状态</h2>
+                    <span class="ff-badge" id="ff-state-confidence">95%</span>
+                </div>
+                <div class="ff-card-body">
+                    <div class="ff-state-compact">
+                        <span class="ff-state-icon" id="ff-state-icon">🧠</span>
+                        <div class="ff-state-info">
+                            <span class="ff-state-name" id="ff-state-name">Normal</span>
+                            <span class="ff-state-duration" id="ff-state-desc">专注阅读中</span>
+                        </div>
+                        <div class="ff-state-timer">
+                            <span id="ff-state-duration">0.0</span>s
+                        </div>
+                    </div>
+                    <!-- Strategy inline -->
+                    <div class="ff-strategy-compact">
+                        <span class="ff-strategy-label">🎯</span>
+                        <span class="ff-strategy-name" id="ff-strategy-name">无干预</span>
+                        <span class="ff-strategy-desc" id="ff-strategy-desc">等待状态变化...</span>
+                        <span class="ff-badge" id="ff-escalation-badge">low</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Attention Metrics (Member C) - compact grid -->
+            <div class="ff-card ff-card-metrics">
+                <div class="ff-card-header">
+                    <h2>📊 注意力指标</h2>
+                </div>
+                <div class="ff-card-body ff-metrics-grid" id="ff-metrics-grid">
+                    <div class="ff-metric-item">
+                        <span class="ff-metric-label">🎯 注意力</span>
+                        <span class="ff-metric-value" id="ff-metric-attention">0%</span>
+                    </div>
+                    <div class="ff-metric-item">
+                        <span class="ff-metric-label">📖 速度</span>
+                        <span class="ff-metric-value" id="ff-metric-wpm">0</span>
+                    </div>
+                    <div class="ff-metric-item">
+                        <span class="ff-metric-label">📊 专注比</span>
+                        <span class="ff-metric-value" id="ff-metric-focus">0%</span>
+                    </div>
+                    <div class="ff-metric-item">
+                        <span class="ff-metric-label">🔄 回读</span>
+                        <span class="ff-metric-value" id="ff-metric-regression">0</span>
+                    </div>
+                    <div class="ff-metric-item">
+                        <span class="ff-metric-label">⏱️ 时长</span>
+                        <span class="ff-metric-value" id="ff-metric-duration">0m</span>
+                    </div>
+                    <div class="ff-metric-item">
+                        <span class="ff-metric-label">🚫 分心</span>
+                        <span class="ff-metric-value" id="ff-metric-distractions">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-modal Features - compact 2-column -->
+            <div class="ff-card ff-card-features">
+                <div class="ff-card-header">
+                    <h2>📡 感知特征</h2>
+                </div>
+                <div class="ff-card-body ff-features-grid" id="ff-features-grid">
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">👤 面部</span>
+                        <span class="ff-feature-value" id="ff-f-face">✅</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">🔄 头部</span>
+                        <span class="ff-feature-value" id="ff-f-pose">中心</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">👁️ 视线</span>
+                        <span class="ff-feature-value" id="ff-f-region">中心</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">🖱️ 鼠标</span>
+                        <span class="ff-feature-value" id="ff-f-mouse">💤</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">📜 滚动</span>
+                        <span class="ff-feature-value" id="ff-f-scroll">⏸️</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">⏱️ 停留</span>
+                        <span class="ff-feature-value" id="ff-f-dwell">0.0s</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">📊 离散度</span>
+                        <span class="ff-feature-value" id="ff-f-dispersion">0</span>
+                    </div>
+                    <div class="ff-feature-item">
+                        <span class="ff-feature-label">🔄 交互</span>
+                        <span class="ff-feature-value" id="ff-f-interaction">✅</span>
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+    </main>
+
+    <!-- ====== BOTTOM SECTION: Camera + Chart + Timeline + Log (full width) ====== -->
+    <div class="ff-dashboard">
+        
+        <!-- Camera + Adaptation Row -->
+        <div class="ff-row">
+            <!-- 📷 Real-time Face Detection Panel -->
+            <div class="ff-card ff-card-camera">
+                <div class="ff-card-header">
+                    <h2>📷 实时人脸检测</h2>
+                    <div class="ff-camera-controls">
+                        <button id="btn-start-camera" class="ff-btn ff-btn-primary" onclick="toggleCamera()">📷 开启摄像头</button>
+                        <span class="ff-badge" id="ff-camera-status" style="background:#666">未连接</span>
+                    </div>
+                </div>
+                <div class="ff-card-body">
+                    <div class="ff-camera-container">
+                        <video id="webcam" autoplay playsinline muted></video>
+                        <canvas id="face-overlay"></canvas>
+                        <div class="ff-camera-info" id="ff-camera-info">
+                            <div class="ff-camera-stat"><span>👤 人脸:</span> <span id="ff-cam-face">---</span></div>
+                            <div class="ff-camera-stat"><span>🎯 置信度:</span> <span id="ff-cam-confidence">---</span></div>
+                            <div class="ff-camera-stat"><span>📐 头部姿态:</span> <span id="ff-cam-pose">---</span></div>
+                            <div class="ff-camera-stat"><span>👁️ 视线区域:</span> <span id="ff-cam-gaze">---</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Threshold Adaptation Monitor -->
+            <div class="ff-card ff-card-adaptation">
+                <div class="ff-card-header">
+                    <h2>📈 阈值自适应监控</h2>
+                    <span class="ff-badge" id="ff-adapt-count">适应次数: 0</span>
+                </div>
+                <div class="ff-card-body">
+                    <div class="ff-adapt-grid">
+                        <div class="ff-adapt-item">
+                            <label>分心无面部 (ms)</label>
+                            <span id="ff-adapt-noface">3000</span>
+                        </div>
+                        <div class="ff-adapt-item">
+                            <label>分心无交互 (ms)</label>
+                            <span id="ff-adapt-nointeract">5000</span>
+                        </div>
+                        <div class="ff-adapt-item">
+                            <label>困难停留 (ms)</label>
+                            <span id="ff-adapt-dwell">8000</span>
+                        </div>
+                        <div class="ff-adapt-item">
+                            <label>恢复稳定 (ms)</label>
+                            <span id="ff-adapt-recover">5000</span>
+                        </div>
+                        <div class="ff-adapt-item">
+                            <label>avg阅读速度</label>
+                            <span id="ff-adapt-speed">---</span>
+                        </div>
+                        <div class="ff-adapt-item">
+                            <label>avg停留时间</label>
+                            <span id="ff-adapt-avgdwell">---</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom cards row: Chart + Timeline + Log -->
+        <div class="ff-row ff-row-bottom">
+            <!-- State Probability Chart -->
+            <div class="ff-card ff-card-chart">
+                <div class="ff-card-header">
+                    <h2>📊 状态概率分布</h2>
+                </div>
+                <div class="ff-card-body">
+                    <canvas id="stateProbChart" height="120"></canvas>
+                </div>
+            </div>
+
+            <!-- State Timeline -->
+            <div class="ff-card ff-card-timeline">
+                <div class="ff-card-header">
+                    <h2>⏳ 状态时间线</h2>
+                </div>
+                <div class="ff-card-body">
+                    <div class="ff-timeline" id="ff-timeline">
+                        <div class="ff-timeline-empty">等待数据...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Event Log -->
+            <div class="ff-card ff-card-log">
+                <div class="ff-card-header">
+                    <h2>📝 事件日志</h2>
+                    <button class="ff-btn-sm" onclick="clearLog()">清除</button>
+                </div>
+                <div class="ff-card-body">
+                    <div class="ff-log-container" id="ff-log">
+                        <div class="ff-log-entry ff-log-info">
+                            <span class="ff-log-time">--:--:--</span>
+                            <span class="ff-log-msg">系统就绪，等待启动...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ====== SCRIPTS ====== -->
+    <!-- 1. Perception Layer (Member A) -->
+    <script src="js/perception/faceDetection.js"></script>
+    <script src="js/perception/headPose.js"></script>
+    <script src="js/perception/gazeRegion.js"></script>
+    <script src="js/perception/mouseTracker.js"></script>
+    <script src="js/perception/scrollAnalyzer.js"></script>
+    <script src="js/perception/attentionHeatmap.js"></script>
+    <script src="js/perception/perceptionModule.js"></script>
+    
+    <!-- 1.5 Calibration Layer -->
+    <script src="js/calibration/calibrationManager.js"></script>
+    
+    <!-- 2. Cognition Layer (Member A) -->
+    <script src="js/cognition/stateMachine.js"></script>
+    
+    <!-- 3. Decision Layer (Member A) -->
+    <script src="js/decision/adaptiveThreshold.js"></script>
+    <script src="js/decision/interventionStrategy.js"></script>
+    <script src="js/decision/decisionModule.js"></script>
+    
+    <!-- 4. UI Layer (Member B) -->
+    <script src="js/ui/readingView.js"></script>
+    <script src="js/ui/visualEffects.js"></script>
+    
+    <!-- 5. NLP & Analytics (Member C) -->
+    <script src="js/nlp/keywordExtractor.js"></script>
+    <script src="js/analytics/attentionAnalytics.js"></script>
+    
+    <!-- 6. Main Application Orchestrator -->
+    <script src="js/main.js"></script>
+    
+    <!-- 5. Test/Demo Page Logic -->
+    <script>
+        // ====== STATE ======
+        let isDemoRunning = false;
+        let demoInterval = null;
+        let updateInterval = null;
+        let probChart = null;
+        let timelineHistory = [];
+        let logEntries = 0;
+        const MAX_TIMELINE = 20;
+        
+        // Camera state
+        let cameraStream = null;
+        let cameraInterval = null;
+        let faceDetector = null;
+        let isCameraOn = false;
+
+        // ====== INIT ======
+        document.addEventListener('DOMContentLoaded', function() {
+            log('✅', '页面加载完成');
+            log('ℹ️', '点击 "启动Demo模式" 开始测试');
+            
+            initProbChart();
+            
+            // Listen for state changes
+            document.addEventListener('focusflow-state-change', function(e) {
+                const detail = e.detail;
+                onStateChange(detail);
+            });
+            
+            // Set up periodic UI update
+            updateInterval = setInterval(updateUI, 200);
+            
+            // Initialize FaceDetector API if available
+            if ('FaceDetector' in window) {
+                faceDetector = new FaceDetector({ maxDetectedFaces: 1, fastMode: true });
+                log('ℹ️', 'FaceDetector API 可用');
+            } else {
+                log('⚠️', 'FaceDetector API 不可用，将使用简单检测模式');
+            }
+        });
+
+        // ====== WEB CAMERA ======
+        window.toggleCamera = async function() {
+            if (isCameraOn) {
+                stopCamera();
+            } else {
+                await startCamera();
+            }
+        };
+
+        async function startCamera() {
+            try {
+                // 检查媒体设备API是否可用
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    const errMsg = '浏览器不支持摄像头API（getUserMedia不可用）';
+                    log('❌', errMsg);
+                    showApiError('摄像头', errMsg, [
+                        '• 请使用最新版 Chrome / Edge / Firefox 浏览器',
+                        '• 请通过 HTTPS 或 localhost 访问本页面',
+                        '• 或使用 🖱️ Demo模式 进行体验'
+                    ]);
+                    return;
+                }
+
+                const video = document.getElementById('webcam');
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 320, height: 240, facingMode: 'user' } 
+                });
+                video.srcObject = cameraStream;
+                await video.play();
+                
+                isCameraOn = true;
+                document.getElementById('btn-start-camera').textContent = '⏹️ 关闭摄像头';
+                document.getElementById('btn-start-camera').className = 'ff-btn ff-btn-danger';
+                document.getElementById('ff-camera-status').textContent = '已连接';
+                document.getElementById('ff-camera-status').style.background = '#4CAF50';
+                
+                log('📷', '摄像头已开启');
+                
+                // Start face detection loop
+                cameraInterval = setInterval(detectFace, 200);
+                
+            } catch (err) {
+                const friendlyMsg = getCameraErrorMessage(err);
+                log('❌', '摄像头启动失败: ' + friendlyMsg);
+                showApiError('摄像头', '无法访问摄像头', [
+                    '• 请确保已授予摄像头权限（浏览器地址栏左侧可设置）',
+                    '• 如果使用 file:// 协议，请改用 localhost 或 HTTPS 访问',
+                    '• 检查是否有其他应用正在占用摄像头',
+                    '• 或点击 🖱️ 启动Demo模式 使用鼠标模拟'
+                ]);
+            }
+        }
+
+        /**
+         * 将摄像头错误转为友好的中文提示
+         */
+        function getCameraErrorMessage(err) {
+            const name = err.name || '';
+            const message = err.message || '';
+            
+            if (name === 'NotAllowedError' || message.includes('Permission') || message.includes('denied')) {
+                return '摄像头权限被拒绝 — 请在浏览器设置中允许摄像头访问';
+            }
+            if (name === 'NotFoundError' || message.includes('NotFound')) {
+                return '未检测到摄像头设备 — 请连接摄像头后重试';
+            }
+            if (name === 'NotReadableError' || message.includes('NotReadable')) {
+                return '摄像头被其他应用占用 — 请关闭占用摄像头的程序';
+            }
+            if (name === 'OverconstrainedError' || message.includes('Overconstrained')) {
+                return '摄像头不支持当前设置 — 请使用默认摄像头参数';
+            }
+            if (name === 'AbortError' || message.includes('Abort')) {
+                return '摄像头访问被中止 — 请重试';
+            }
+            if (message.includes('http') || message.includes('HTTPS') || name === 'SecurityError') {
+                return '安全限制：摄像头API需要HTTPS或localhost环境';
+            }
+            
+            // 兜底
+            return err.message || '未知错误（' + name + '）';
+        }
+
+        /**
+         * 显示API调用失败的详细提示（不阻塞的模态）
+         */
+        function showApiError(apiName, summary, suggestions) {
+            // 在日志面板显示
+            log('❌', `[${apiName}] ${summary}`);
+            suggestions.forEach(s => log('💡', s));
+            
+            // 在视觉效果面板显示错误提示
+            if (FocusFlow.visualEffects && typeof FocusFlow.visualEffects.showPrompt === 'function') {
+                FocusFlow.visualEffects.showPrompt(
+                    '⚠️',
+                    `${apiName} API调用失败`,
+                    summary + ' — 可尝试Demo模式'
+                );
+            } else {
+                // 降级：使用简单的alert（但提供更多有用信息）
+                alert(
+                    `⚠️ ${apiName} API调用失败\n\n` +
+                    `${summary}\n\n` +
+                    `建议：\n` +
+                    suggestions.join('\n') + '\n\n' +
+                    `💡 提示：您可以点击「启动Demo模式」使用鼠标模拟视线追踪`
+                );
+            }
+        }
+
+
+        function stopCamera() {
+            isCameraOn = false;
+            
+            if (cameraInterval) {
+                clearInterval(cameraInterval);
+                cameraInterval = null;
+            }
+            
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            
+            document.getElementById('webcam').srcObject = null;
+            document.getElementById('btn-start-camera').textContent = '📷 开启摄像头';
+            document.getElementById('btn-start-camera').className = 'ff-btn ff-btn-primary';
+            document.getElementById('ff-camera-status').textContent = '未连接';
+            document.getElementById('ff-camera-status').style.background = '#666';
+            
+            // Clear overlay
+            const canvas = document.getElementById('face-overlay');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Reset camera info
+            document.getElementById('ff-cam-face').textContent = '---';
+            document.getElementById('ff-cam-confidence').textContent = '---';
+            document.getElementById('ff-cam-pose').textContent = '---';
+            document.getElementById('ff-cam-gaze').textContent = '---';
+            
+            log('📷', '摄像头已关闭');
+        }
+
+        async function detectFace() {
+            if (!isCameraOn) return;
+            
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('face-overlay');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = video.videoWidth || 320;
+            canvas.height = video.videoHeight || 240;
+            
+            let facePresent = false;
+            let faceBox = null;
+            let confidence = 0;
+            
+            // Try using FaceDetector API first
+            if (faceDetector) {
+                try {
+                    const faces = await faceDetector.detect(video);
+                    if (faces.length > 0) {
+                        facePresent = true;
+                        faceBox = faces[0].boundingBox;
+                        confidence = faces[0].landmarks ? 0.85 : 0.7;
+                    }
+                } catch (e) {
+                    // Fallback: use canvas-based simple detection
+                    facePresent = fallbackDetect(video, canvas, ctx);
+                    confidence = facePresent ? 0.6 : 0;
+                }
+            } else {
+                // Simple skin-color based detection
+                facePresent = fallbackDetect(video, canvas, ctx);
+                confidence = facePresent ? 0.6 : 0;
+            }
+            
+            // Draw overlay
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (facePresent && faceBox) {
+                // Draw bounding box
+                ctx.strokeStyle = '#4CAF50';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(faceBox.x, faceBox.y, faceBox.width, faceBox.height);
+                
+                // Draw corner markers
+                const c = 10;
+                ctx.strokeStyle = '#00ff88';
+                ctx.lineWidth = 2;
+                const { x, y, width: w, height: h } = faceBox;
+                ctx.beginPath();
+                ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+                ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
+                ctx.moveTo(x + w, y + h - c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - c, y + h);
+                ctx.moveTo(x + c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - c);
+                ctx.stroke();
+                
+                // Label
+                ctx.fillStyle = '#4CAF50';
+                ctx.font = '14px sans-serif';
+                ctx.fillText('✅ FACE', x, y - 8);
+            } else if (facePresent) {
+                // Simple detection worked but no faceBox
+                ctx.fillStyle = '#4CAF50';
+                ctx.font = '14px sans-serif';
+                ctx.fillText('✅ 人脸检测到', 10, 20);
+            } else {
+                ctx.fillStyle = '#F44336';
+                ctx.font = '14px sans-serif';
+                ctx.fillText('❌ 未检测到人脸', 10, 20);
+            }
+            
+            // Update info panel
+            document.getElementById('ff-cam-face').textContent = facePresent ? '✅ 检测到' : '❌ 未检测';
+            document.getElementById('ff-cam-face').style.color = facePresent ? '#4CAF50' : '#F44336';
+            document.getElementById('ff-cam-confidence').textContent = (confidence * 100).toFixed(0) + '%';
+            
+            // Estimate head pose (simplified from face box aspect ratio)
+            if (facePresent && faceBox) {
+                const aspectRatio = faceBox.width / faceBox.height;
+                let pose = '正面';
+                if (aspectRatio > 1.2) pose = '偏左/右';
+                else if (aspectRatio < 0.7) pose = '偏上/下';
+                document.getElementById('ff-cam-pose').textContent = pose;
+                
+                // Estimate gaze region based on face position
+                const cx = faceBox.x + faceBox.width / 2;
+                const cy = faceBox.y + faceBox.height / 2;
+                const vRegion = cy < canvas.height * 0.33 ? '上' : (cy > canvas.height * 0.66 ? '下' : '中');
+                const hRegion = cx < canvas.width * 0.33 ? '左' : (cx > canvas.width * 0.66 ? '右' : '中');
+                document.getElementById('ff-cam-gaze').textContent = vRegion + '-' + hRegion;
+            } else {
+                document.getElementById('ff-cam-pose').textContent = '---';
+                document.getElementById('ff-cam-gaze').textContent = '---';
+            }
+            
+            // Feed face data into FocusFlow perception system
+            if (FocusFlow.perception) {
+                FocusFlow.perception.facePresent = facePresent;
+                FocusFlow.perception.faceConfidence = confidence;
+                // Also update the face detection module if it exists
+                if (FocusFlow.perception.faceDetection) {
+                    FocusFlow.perception.faceDetection.update(faceBox ? [[faceBox.x, faceBox.y, faceBox.width, faceBox.height]] : []);
+                }
+            }
+        }
+
+        function fallbackDetect(video, canvas, ctx) {
+            // Simple skin-color based face detection
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            let skinPixels = 0;
+            const totalPixels = canvas.width * canvas.height;
+            
+            for (let i = 0; i < data.length; i += 16) { // Sample every 4th pixel
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                // Simple skin color detection in RGB
+                if (r > 95 && g > 40 && b > 20 &&
+                    r > g && r > b &&
+                    Math.abs(r - g) > 15 &&
+                    r > 140 && g < 240 && b < 240) {
+                    skinPixels++;
+                }
+            }
+            
+            const skinRatio = skinPixels / (totalPixels / 16);
+            return skinRatio > 0.15; // If >15% of sampled pixels are skin-colored
+        }
+
+        // ====== TOGGLE DEMO ======
+        window.toggleDemo = function() {
+            if (isDemoRunning) {
+                stopDemo();
+            } else {
+                startDemo();
+            }
+        };
+
+        function startDemo() {
+            if (isDemoRunning) return;
+            
+            isDemoRunning = true;
+            document.getElementById('btn-toggle-demo').textContent = '⏹️ 停止Demo';
+            document.getElementById('btn-toggle-demo').className = 'ff-btn ff-btn-danger';
+            
+            // Override config
+            FocusFlow.config.demoMode = true;
+            FocusFlow.config.useWebGazer = false;
+            
+            // Initialize if not already
+            if (!FocusFlow.perception) {
+                FocusFlow.perception = new PerceptionModule(FocusFlow.config);
+                FocusFlow.cognition = new StateMachine(FocusFlow.config);
+                FocusFlow.decision = new DecisionModule(FocusFlow.config);
+            }
+            
+            // Start demo simulation with richer behavior
+            startDemoSimulation();
+            
+            log('🚀', 'Demo模式启动 - 模拟用户行为中...');
+        }
+
+        function stopDemo() {
+            isDemoRunning = false;
+            document.getElementById('btn-toggle-demo').textContent = '🖱️ 启动Demo模式';
+            document.getElementById('btn-toggle-demo').className = 'ff-btn ff-btn-primary';
+            
+            if (demoInterval) {
+                clearInterval(demoInterval);
+                demoInterval = null;
+            }
+            
+            if (FocusFlow.shutdown) {
+                FocusFlow.shutdown();
+            }
+            
+            log('⏹️', 'Demo已停止');
+        }
+
+        // ====== DEMO SIMULATION ======
+        let simState = {
+            phase: 0,
+            phaseTime: 0,
+            facePresent: true,
+            interactionActive: true,
+            scrollVelocity: 1.0,
+            dwellTime: 2000,
+            mouseMoving: true,
+            mouseVelocity: 0.5,
+            isPaused: false,
+            gazeX: window.innerWidth / 2,
+            gazeY: window.innerHeight / 2
+        };
+
+        // Predefined scenario script
+        const scenarios = [
+            // [duration_ms, name, setup_fn]
+            [5000, 'Normal Reading', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 1.2; s.dwellTime = 2000;
+                s.mouseMoving = true; s.mouseVelocity = 0.3;
+            }],
+            [4000, 'Distracted - No Face', (s) => {
+                s.facePresent = false; s.interactionActive = false;
+                s.scrollVelocity = 0; s.dwellTime = 0;
+                s.mouseMoving = false; s.mouseVelocity = 0;
+            }],
+            [3000, 'Recovering', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 0.5; s.dwellTime = 1000;
+                s.mouseMoving = true; s.mouseVelocity = 0.2;
+            }],
+            [5000, 'Normal Reading', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 1.0; s.dwellTime = 2500;
+                s.mouseMoving = true; s.mouseVelocity = 0.3;
+            }],
+            [6000, 'Struggling - Long Dwell', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 0.1; s.dwellTime = 12000;
+                s.mouseMoving = false; s.mouseVelocity = 0;
+                s.isPaused = true;
+            }],
+            [3000, 'Recovering from Struggle', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 0.8; s.dwellTime = 3000;
+                s.mouseMoving = true; s.mouseVelocity = 0.4;
+                s.isPaused = false;
+            }],
+            [4000, 'Normal', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 1.5; s.dwellTime = 1500;
+                s.mouseMoving = true; s.mouseVelocity = 0.5;
+            }],
+            [8000, 'Distracted - Long', (s) => {
+                s.facePresent = false; s.interactionActive = false;
+                s.scrollVelocity = 0; s.dwellTime = 0;
+                s.mouseMoving = false; s.mouseVelocity = 0;
+            }],
+            [5000, 'Recovering Slowly', (s) => {
+                s.facePresent = true; s.interactionActive = false;
+                s.scrollVelocity = 0.3; s.dwellTime = 2000;
+                s.mouseMoving = true; s.mouseVelocity = 0.1;
+            }],
+            [5000, 'Normal', (s) => {
+                s.facePresent = true; s.interactionActive = true;
+                s.scrollVelocity = 1.0; s.dwellTime = 3000;
+                s.mouseMoving = true; s.mouseVelocity = 0.3;
+            }],
+        ];
+
+        let currentScenario = 0;
+        let scenarioTime = 0;
+
+        function startDemoSimulation() {
+            if (demoInterval) clearInterval(demoInterval);
+            
+            currentScenario = 0;
+            scenarioTime = 0;
+            
+            // Apply first scenario
+            if (scenarios.length > 0) {
+                scenarios[currentScenario][2](simState);
+                log('🎬', `场景: ${scenarios[currentScenario][1]}`);
+            }
+            
+            demoInterval = setInterval(() => {
+                if (!isDemoRunning) return;
+                
+                const dt = 100; // ms per tick
+                scenarioTime += dt;
+                
+                // Check if current scenario is done
+                if (scenarioTime > scenarios[currentScenario][0]) {
+                    scenarioTime = 0;
+                    currentScenario = (currentScenario + 1) % scenarios.length;
+                    scenarios[currentScenario][2](simState);
+                    log('🔄', `场景切换 → ${scenarios[currentScenario][1]}`);
+                }
+                
+                // Add some noise to simulate real behavior
+                const noise = () => (Math.random() - 0.5) * 0.2;
+                const dwellNoise = simState.dwellTime > 0 ? (Math.random() - 0.5) * 500 : 0;
+                
+                // Build simulated features
+                const features = {
+                    facePresent: simState.facePresent,
+                    faceAbsentDuration: simState.facePresent ? 0 : scenarioTime,
+                    faceConfidence: simState.facePresent ? 0.9 : 0.1,
+                    pitch: 0, yaw: 0, roll: 0,
+                    verticalRegion: 'center',
+                    horizontalRegion: 'center',
+                    gazeRegion: 'center-center',
+                    gazeX: simState.gazeX + (Math.random() - 0.5) * 100,
+                    gazeY: simState.gazeY + (Math.random() - 0.5) * 100,
+                    currentRegion: 'center-center',
+                    dwellTime: Math.max(0, simState.dwellTime + dwellNoise),
+                    isValid: true,
+                    confidence: simState.facePresent ? 0.85 : 0.1,
+                    mouseVelocity: simState.mouseVelocity + noise(),
+                    mouseAcceleration: noise() * 0.1,
+                    isMoving: simState.mouseMoving,
+                    idleDuration: simState.mouseMoving ? 0 : scenarioTime,
+                    isIdle: !simState.mouseMoving,
+                    horizontalMovementRatio: 0.6 + noise(),
+                    directionChanges: Math.floor(Math.random() * 3),
+                    scrollVelocity: simState.scrollVelocity + noise(),
+                    scrollDirection: simState.scrollVelocity > 0 ? 'down' : 'none',
+                    isScrolling: simState.scrollVelocity > 0.1,
+                    isPaused: simState.isPaused,
+                    pauseDuration: simState.isPaused ? scenarioTime : 0,
+                    scrollIdleDuration: simState.isPaused ? scenarioTime : 0,
+                    contentProgress: 0.5,
+                    currentReadingSpeed: simState.scrollVelocity,
+                    averageReadingSpeed: 1.0,
+                    isJumpScrolling: false,
+                    totalScrollDistance: 1000,
+                    interactionActive: simState.interactionActive,
+                    attentionX: simState.gazeX,
+                    attentionY: simState.gazeY,
+                    attentionConfidence: 0.7,
+                    dispersion: simState.facePresent ? 50 + Math.random() * 100 : 300 + Math.random() * 200,
+                    pointCount: 10,
+                    gazeRatio: 0.6,
+                    timestamp: performance.now()
+                };
+                
+                // Run through pipeline
+                FocusFlow.cognition.update(features, performance.now());
+                const state = FocusFlow.cognition.getState();
+                FocusFlow.decision.decide(state, features, {});
+                
+            }, 100);
+        }
+
+        // ====== STATE CHANGE HANDLER ======
+        function onStateChange(detail) {
+            const state = detail.currentState;
+            
+            // Update timeline
+            timelineHistory.push({
+                state: state.name,
+                confidence: detail.probabilities[state.name],
+                time: new Date().toLocaleTimeString()
+            });
+            if (timelineHistory.length > MAX_TIMELINE) {
+                timelineHistory.shift();
+            }
+            
+            // Log
+            const prevName = detail.previousState ? detail.previousState.name : 'None';
+            log('🔄', `${prevName} → ${state.name} (${(detail.probabilities[state.name] * 100).toFixed(0)}%)`);
+        }
+
+        // ====== UI UPDATE ======
+        function updateUI() {
+            if (!FocusFlow.cognition || !FocusFlow.decision) return;
+            
+            const state = FocusFlow.cognition.getState();
+            const probs = FocusFlow.cognition.getProbabilities();
+            const decision = FocusFlow.decision.getCurrentDecision();
+            const profile = FocusFlow.decision.getUserProfile();
+            const thresholds = FocusFlow.decision.adaptiveThreshold.getThresholds();
+            
+            // Update state display
+            updateStateDisplay(state, probs);
+            
+            // Update strategy
+            if (decision && decision.strategy) {
+                updateStrategyDisplay(decision.strategy);
+            }
+            
+            // Update profile
+            if (profile) {
+                updateProfileDisplay(profile);
+            }
+            
+            // Update thresholds
+            if (thresholds) {
+                updateThresholdDisplay(thresholds, profile);
+            }
+            
+            // Update probability chart
+            updateProbChart(probs);
+            
+            // Update timeline
+            updateTimeline();
+            
+            // Update simulated features
+            updateFeatureDisplay();
+        }
+
+        function updateStateDisplay(state, probs) {
+            const iconEl = document.getElementById('ff-state-icon');
+            const nameEl = document.getElementById('ff-state-name');
+            const descEl = document.getElementById('ff-state-desc');
+            const durEl = document.getElementById('ff-state-duration');
+            const confEl = document.getElementById('ff-state-confidence');
+            
+            if (!state) return;
+            
+            // Color mapping
+            const colors = {
+                'Normal': '#4CAF50',
+                'Distracted': '#FF9800',
+                'Struggling': '#F44336',
+                'Recovering': '#2196F3'
+            };
+            const icons = {
+                'Normal': '🧠',
+                'Distracted': '👀',
+                'Struggling': '🤔',
+                'Recovering': '🔄'
+            };
+            const descs = {
+                'Normal': '专注阅读中',
+                'Distracted': '注意力分散',
+                'Struggling': '理解困难',
+                'Recovering': '正在恢复'
+            };
+            
+            iconEl.textContent = icons[state.name] || '🧠';
+            nameEl.textContent = state.name;
+            nameEl.style.color = colors[state.name] || '#fff';
+            descEl.textContent = descs[state.name] || '';
+            durEl.textContent = (state.duration / 1000).toFixed(1);
+            confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
+            confEl.style.backgroundColor = colors[state.name] || '#666';
+            
+            // Update the card border color
+            const cardState = document.getElementById('card-state');
+            if (cardState) {
+                cardState.style.borderColor = colors[state.name] || '#1e293b';
+                cardState.style.boxShadow = `0 0 20px ${colors[state.name]}20`;
+            }
+        }
+
+        function updateStrategyDisplay(strategy) {
+            const nameEl = document.getElementById('ff-strategy-name');
+            const descEl = document.getElementById('ff-strategy-desc');
+            const badgeEl = document.getElementById('ff-escalation-badge');
+            
+            if (nameEl) nameEl.textContent = strategy.name || '无干预';
+            if (descEl) descEl.textContent = strategy.description || '';
+            
+            // Escalation level
+            if (badgeEl && FocusFlow.decision) {
+                const level = FocusFlow.decision._getEscalationLevel();
+                badgeEl.textContent = level;
+                badgeEl.style.backgroundColor = level === 'high' ? '#F44336' : 
+                                               level === 'medium' ? '#FF9800' : '#4CAF50';
+            }
+        }
+
+        function updateProfileDisplay(profile) {
+            // These elements removed in compact layout; profile data shown via threshold display
+            // No-op: profile metrics displayed via thresholds card below
+        }
+
+        function updateThresholdDisplay(thresholds, profile) {
+            const adaptNoface = document.getElementById('ff-adapt-noface');
+            const adaptNointeract = document.getElementById('ff-adapt-nointeract');
+            const adaptDwell = document.getElementById('ff-adapt-dwell');
+            const adaptRecover = document.getElementById('ff-adapt-recover');
+            const adaptSpeed = document.getElementById('ff-adapt-speed');
+            const adaptAvgDwell = document.getElementById('ff-adapt-avgdwell');
+            const adaptCount = document.getElementById('ff-adapt-count');
+            
+            if (adaptNoface) adaptNoface.textContent = thresholds.distractionNoFace + ' ms';
+            if (adaptNointeract) adaptNointeract.textContent = thresholds.distractionNoInteraction + ' ms';
+            if (adaptDwell) adaptDwell.textContent = thresholds.strugglingDwellTime + ' ms';
+            if (adaptRecover) adaptRecover.textContent = thresholds.recoveringStableTime + ' ms';
+            
+            if (profile) {
+                if (adaptSpeed) adaptSpeed.textContent = 
+                    profile.readingSpeed ? profile.readingSpeed.avg.toFixed(2) + ' px/ms' : '---';
+                if (adaptAvgDwell) adaptAvgDwell.textContent = 
+                    profile.dwellTime ? profile.dwellTime.avg.toFixed(0) + ' ms' : '---';
+                if (adaptCount) adaptCount.textContent = 
+                    '适应次数: ' + (profile.totalAdaptations || 0);
+            }
+        }
+
+        // ====== PROBABILITY CHART ======
+        function initProbChart() {
+            const ctx = document.getElementById('stateProbChart').getContext('2d');
+            probChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Normal', 'Distracted', 'Struggling', 'Recovering'],
+                    datasets: [{
+                        label: '概率',
+                        data: [0.8, 0.05, 0.1, 0.05],
+                        backgroundColor: [
+                            'rgba(76, 175, 80, 0.7)',
+                            'rgba(255, 152, 0, 0.7)',
+                            'rgba(244, 67, 54, 0.7)',
+                            'rgba(33, 150, 243, 0.7)'
+                        ],
+                        borderColor: [
+                            '#4CAF50', '#FF9800', '#F44336', '#2196F3'
+                        ],
+                        borderWidth: 2,
+                        borderRadius: 4,
+                        barThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            ticks: {
+                                callback: (v) => (v * 100) + '%',
+                                color: '#aaa'
+                            },
+                            grid: { color: '#333' }
+                        },
+                        x: {
+                            ticks: { color: '#ccc' },
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        function updateProbChart(probs) {
+            if (!probChart || !probs) return;
+            probChart.data.datasets[0].data = [
+                (probs.Normal || 0).toFixed(3),
+                (probs.Distracted || 0).toFixed(3),
+                (probs.Struggling || 0).toFixed(3),
+                (probs.Recovering || 0).toFixed(3)
+            ];
+            probChart.update('none');
+        }
+
+        // ====== TIMELINE ======
+        function updateTimeline() {
+            const container = document.getElementById('ff-timeline');
+            
+            if (timelineHistory.length === 0) {
+                container.innerHTML = '<div class="ff-timeline-empty">等待数据...</div>';
+                return;
+            }
+            
+            const colors = {
+                'Normal': '#4CAF50',
+                'Distracted': '#FF9800',
+                'Struggling': '#F44336',
+                'Recovering': '#2196F3'
+            };
+            
+            let html = '';
+            for (const entry of timelineHistory) {
+                html += `
+                    <div class="ff-timeline-item">
+                        <div class="ff-timeline-dot" style="background: ${colors[entry.state] || '#666'}"></div>
+                        <div class="ff-timeline-content">
+                            <span class="ff-timeline-state" style="color: ${colors[entry.state] || '#666'}">${entry.state}</span>
+                            <span class="ff-timeline-time">${entry.time}</span>
+                            <span class="ff-timeline-conf">${(entry.confidence * 100).toFixed(0)}%</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ====== FEATURES DISPLAY ======
+        function updateFeatureDisplay() {
+            // Use simState for demo mode since we don't have real perception running
+            if (!isDemoRunning) return;
+            
+            document.getElementById('ff-f-face').textContent = simState.facePresent ? '✅ 检测到' : '❌ 未检测';
+            document.getElementById('ff-f-face').style.color = simState.facePresent ? '#4CAF50' : '#F44336';
+            
+            document.getElementById('ff-f-pose').textContent = '中心';
+            
+            document.getElementById('ff-f-region').textContent = 'center-center';
+            
+            document.getElementById('ff-f-mouse').textContent = simState.mouseMoving ? '🖱️ 移动中' : '💤 空闲';
+            document.getElementById('ff-f-mouse').style.color = simState.mouseMoving ? '#4CAF50' : '#FF9800';
+            
+            document.getElementById('ff-f-scroll').textContent = simState.isPaused ? '⏸️ 暂停' : 
+                (simState.scrollVelocity > 0 ? '📜 滚动中' : '⏸️ 暂停');
+            document.getElementById('ff-f-scroll').style.color = simState.scrollVelocity > 0 ? '#4CAF50' : '#FF9800';
+            
+            document.getElementById('ff-f-dwell').textContent = (simState.dwellTime / 1000).toFixed(1) + 's';
+            document.getElementById('ff-f-dwell').style.color = simState.dwellTime > 8000 ? '#F44336' : '#4CAF50';
+            
+            document.getElementById('ff-f-dispersion').textContent = simState.facePresent ? 
+                (50 + Math.random() * 100).toFixed(0) : (300 + Math.random() * 200).toFixed(0);
+            
+            document.getElementById('ff-f-interaction').textContent = simState.interactionActive ? '✅ 活跃' : '❌ 无交互';
+            document.getElementById('ff-f-interaction').style.color = simState.interactionActive ? '#4CAF50' : '#F44336';
+        }
+
+        // ====== LOGGING ======
+        function log(icon, message) {
+            const container = document.getElementById('ff-log');
+            const time = new Date().toLocaleTimeString();
+            
+            const entry = document.createElement('div');
+            entry.className = 'ff-log-entry';
+            entry.innerHTML = `
+                <span class="ff-log-time">${time}</span>
+                <span class="ff-log-icon">${icon}</span>
+                <span class="ff-log-msg">${message}</span>
+            `;
+            
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+            
+            logEntries++;
+            if (logEntries > 50) {
+                container.removeChild(container.firstChild);
+                logEntries--;
+            }
+        }
+
+        window.clearLog = function() {
+            const container = document.getElementById('ff-log');
+            container.innerHTML = '';
+            logEntries = 0;
+            log('ℹ️', '日志已清除');
+        };
+
+        // ====== FILE IMPORT (Fix 3) ======
+        window.handleFileImport = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+
+                // Use ReadingView.loadFromText if available
+                if (FocusFlow.readingView && typeof FocusFlow.readingView.loadFromText === 'function') {
+                    FocusFlow.readingView.loadFromText(text, file.name);
+                } else {
+                    // Fallback: find or create readingView on FocusFlow
+                    const container = document.getElementById('ff-reading-content');
+                    if (container) {
+                        // Attempt to create a temporary ReadingView and load
+                        try {
+                            const rv = new ReadingView(FocusFlow.config || {});
+                            rv.loadFromText(text, file.name);
+                            FocusFlow.readingView = rv;
+                        } catch (err) {
+                            // Last resort: simple text injection
+                            container.innerHTML = '<pre style="white-space:pre-wrap;padding:1em;">' +
+                                escapeHtml(text) + '</pre>';
+                        }
+                    }
+                }
+
+                log('📂', `已导入文件: ${file.name} (${(text.length / 1024).toFixed(1)} KB)`);
+                
+                // Reset file input so same file can be re-imported
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        };
+
+        // Helper: escape HTML for safe injection
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // ====== RESET ======
+        window.resetAll = function() {
+            stopDemo();
+            stopCamera();
+            
+            if (FocusFlow.perception) FocusFlow.perception.reset();
+            if (FocusFlow.cognition) FocusFlow.cognition.reset();
+            if (FocusFlow.decision) FocusFlow.decision.reset();
+            
+            timelineHistory = [];
+            simState = {
+                phase: 0, phaseTime: 0,
+                facePresent: true, interactionActive: true,
+                scrollVelocity: 1.0, dwellTime: 2000,
+                mouseMoving: true, mouseVelocity: 0.5,
+                isPaused: false,
+                gazeX: window.innerWidth / 2, gazeY: window.innerHeight / 2
+            };
+            currentScenario = 0;
+            scenarioTime = 0;
+            
+            document.getElementById('ff-timeline').innerHTML = '<div class="ff-timeline-empty">等待数据...</div>';
+            document.getElementById('ff-log').innerHTML = '';
+            logEntries = 0;
+            
+            log('🔄', '系统已重置');
+        };
+
+        // Handle window close
+        window.addEventListener('beforeunload', function() {
+            if (demoInterval) clearInterval(demoInterval);
+            if (updateInterval) clearInterval(updateInterval);
+            if (cameraInterval) clearInterval(cameraInterval);
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+            }
+            if (FocusFlow.shutdown) FocusFlow.shutdown();
+        });
+    </script>
+</body>
+</html>

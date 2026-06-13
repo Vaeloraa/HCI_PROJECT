@@ -1,0 +1,944 @@
+/* ==============================
+   FocusFlow — Adaptive Attention UI
+   HCI Final Project
+   ============================== */
+
+/* ---- Reset & Base ---- */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --bg-primary: #0a0e1a;
+    --bg-card: #111827;
+    --bg-card-hover: #1a2332;
+    --border-color: #1e293b;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent-normal: #4CAF50;
+    --accent-distracted: #FF9800;
+    --accent-struggling: #F44336;
+    --accent-recovering: #2196F3;
+    --shadow: 0 4px 24px rgba(0,0,0,0.3);
+    --radius: 12px;
+    --radius-sm: 8px;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+/* ---- Header ---- */
+.ff-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.ff-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ff-logo-icon {
+    font-size: 28px;
+}
+
+.ff-logo h1 {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.ff-version {
+    font-size: 11px;
+    -webkit-text-fill-color: var(--text-muted);
+    background: none;
+    padding: 2px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-left: 6px;
+}
+
+.ff-header-controls {
+    display: flex;
+    gap: 8px;
+}
+
+/* ---- Buttons ---- */
+.ff-btn {
+    padding: 7px 16px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ff-btn-primary {
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: white;
+}
+
+.ff-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+}
+
+.ff-btn-secondary {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.ff-btn-secondary:hover {
+    background: #334155;
+}
+
+.ff-btn-danger {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+}
+
+.ff-btn-danger:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239,68,68,0.4);
+}
+
+.ff-btn-sm {
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s;
+}
+
+.ff-btn-sm:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* ============================================================
+   MAIN LAYOUT: Reading Panel (left) + Dashboard Sidebar (right)
+   ============================================================ */
+
+.ff-main-layout {
+    display: flex;
+    max-width: 100%;
+    margin: 0;
+    padding: 8px 10px;
+    gap: 10px;
+    min-height: calc(100vh - 70px);
+}
+
+/* ---- Reading Panel (left side - Member B) ---- */
+.ff-reading-panel {
+    flex: 1;
+    min-width: 0;
+    max-width: calc(100% - 420px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
+    position: relative;
+}
+
+.ff-reading-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(255,255,255,0.02);
+}
+
+.ff-reading-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ff-reading-stats {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 11px;
+}
+
+.ff-reading-stat {
+    color: var(--text-muted);
+    font-family: monospace;
+}
+
+.ff-reading-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 28px;
+    line-height: 2;
+    font-size: 15px;
+    color: var(--text-primary);
+    position: relative;
+}
+
+.ff-reading-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+/* Reading blocks (paragraphs) */
+.ff-block {
+    margin-bottom: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.3s, opacity 0.5s;
+    cursor: default;
+    position: relative;
+}
+
+.ff-block-highlighted {
+    background: rgba(96, 165, 250, 0.12);
+    border-left: 3px solid #60a5fa;
+}
+
+.ff-block-dimmed {
+    opacity: 0.5;
+}
+
+.ff-block-normal {
+    opacity: 1;
+}
+
+/* Reading progress bar */
+.ff-reading-progress-bar {
+    height: 3px;
+    background: var(--border-color);
+    position: relative;
+}
+
+.ff-reading-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    transition: width 0.5s ease;
+    border-radius: 0 2px 2px 0;
+}
+
+/* Keyword popup (Member C) */
+.ff-keyword-popup {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 260px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 50;
+    animation: ff-slide-up 0.3s ease;
+}
+
+@keyframes ff-slide-up {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.ff-keyword-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.ff-keyword-header h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.ff-keyword-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.ff-keyword-close:hover {
+    color: var(--text-primary);
+}
+
+.ff-keyword-body {
+    padding: 10px 14px;
+}
+
+.ff-keyword-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 12px;
+}
+
+.ff-keyword-item:last-child {
+    border-bottom: none;
+}
+
+.ff-keyword-word {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.ff-keyword-score {
+    color: var(--text-muted);
+    font-family: monospace;
+    font-size: 11px;
+}
+
+/* ============================================================
+   DASHBOARD SIDEBAR (right side) - COMPACT ESSENTIALS
+   ============================================================ */
+
+.ff-dashboard-panel {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    max-height: calc(100vh - 86px);
+    padding-right: 2px;
+}
+
+/* All cards in sidebar get compact padding */
+.ff-dashboard-panel .ff-card {
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+.ff-dashboard-panel .ff-card-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(255,255,255,0.02);
+}
+
+.ff-dashboard-panel .ff-card-body {
+    padding: 8px 12px;
+}
+
+.ff-dashboard-panel .ff-card-header h2 {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ---- State + Strategy Compact Card ---- */
+.ff-state-compact {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+}
+
+.ff-state-compact .ff-state-icon {
+    font-size: 32px;
+    line-height: 1;
+}
+
+.ff-state-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.ff-state-info .ff-state-name {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.ff-state-info .ff-state-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.ff-state-compact .ff-state-timer {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.ff-state-compact .ff-state-timer span {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Strategy displayed inline below state */
+.ff-strategy-compact {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0 2px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+.ff-strategy-compact .ff-strategy-label {
+    font-size: 14px;
+}
+
+.ff-strategy-compact .ff-strategy-name {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.ff-strategy-compact .ff-strategy-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex: 1;
+}
+
+/* ---- Metrics Grid (Member C analytics) ---- */
+.ff-metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.ff-metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.ff-metric-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.ff-metric-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: monospace;
+}
+
+/* ---- Features Grid ---- */
+.ff-features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.ff-feature-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.ff-feature-label {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.ff-feature-value {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* ============================================================
+   BOTTOM SECTION (full width rows)
+   ============================================================ */
+
+.ff-dashboard {
+    max-width: 100%;
+    margin: 0 10px 20px;
+    padding: 0;
+}
+
+.ff-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+/* Camera gets more space in first row */
+.ff-card-camera {
+    grid-column: 1;
+}
+.ff-card-adaptation {
+    grid-column: 2;
+}
+
+/* Bottom row: 3 equal columns */
+.ff-row-bottom {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* ---- Cards (generic) ---- */
+.ff-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: all 0.3s;
+}
+
+.ff-card:hover {
+    border-color: #334155;
+}
+
+.ff-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(255,255,255,0.02);
+}
+
+.ff-card-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ff-card-body {
+    padding: 14px 16px;
+}
+
+/* ---- Badge ---- */
+.ff-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent-normal);
+    color: white;
+}
+
+/* ---- Camera Panel ---- */
+.ff-card-camera .ff-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ff-camera-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ff-camera-container {
+    position: relative;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    background: #000;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    aspect-ratio: 4/3;
+}
+
+.ff-camera-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.ff-camera-container #face-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.ff-camera-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 8px;
+    background: rgba(255,255,255,0.03);
+    border-radius: var(--radius-sm);
+}
+
+.ff-camera-stat {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 3px 6px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 4px;
+}
+
+.ff-camera-stat span:first-child {
+    color: var(--text-muted);
+}
+
+.ff-camera-stat span:last-child {
+    font-weight: 600;
+    font-family: monospace;
+}
+
+/* ---- Adaptation Card ---- */
+.ff-card-adaptation .ff-adapt-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.ff-adapt-item {
+    padding: 8px 6px;
+    background: rgba(255,255,255,0.03);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.ff-adapt-item label {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.ff-adapt-item span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+/* ---- Chart Card ---- */
+.ff-card-chart .ff-card-body {
+    padding: 8px;
+    height: 180px;
+}
+
+/* ---- Timeline ---- */
+.ff-timeline {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ff-timeline-empty {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 30px 16px;
+    font-size: 13px;
+}
+
+.ff-timeline-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.02);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid transparent;
+}
+
+.ff-timeline-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.ff-timeline-content {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex: 1;
+}
+
+.ff-timeline-state {
+    font-weight: 600;
+    font-size: 12px;
+    min-width: 70px;
+}
+
+.ff-timeline-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: monospace;
+}
+
+.ff-timeline-conf {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+/* ---- Log ---- */
+.ff-log-container {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ff-log-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.02);
+}
+
+.ff-log-time {
+    color: var(--text-muted);
+    min-width: 65px;
+}
+
+.ff-log-icon {
+    min-width: 16px;
+}
+
+.ff-log-msg {
+    color: var(--text-secondary);
+}
+
+.ff-log-info .ff-log-msg {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* ---- Color States ---- */
+.ff-state-Normal { border-color: var(--accent-normal); }
+.ff-state-Distracted { border-color: var(--accent-distracted); }
+.ff-state-Struggling { border-color: var(--accent-struggling); }
+.ff-state-Recovering { border-color: var(--accent-recovering); }
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+    width: 5px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
+/* ---- Calibration Overlay (9-Point) ---- */
+#ff-calibration-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(10, 14, 26, 0.92);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: ff-cal-fade-in 0.5s ease;
+}
+
+@keyframes ff-cal-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.ff-calibration-point {
+    position: absolute;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid rgba(96, 165, 250, 0.2);
+    background: rgba(96, 165, 250, 0.05);
+    pointer-events: none;
+    z-index: 5;
+    transition: all 0.4s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ff-calibration-point .ff-cal-inner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #60a5fa;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.3);
+}
+
+.ff-calibration-point.active {
+    opacity: 1;
+    border-color: rgba(96, 165, 250, 0.6);
+    background: rgba(96, 165, 250, 0.1);
+    box-shadow: 0 0 40px rgba(96, 165, 250, 0.15);
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.ff-calibration-point.active .ff-cal-inner {
+    width: 18px;
+    height: 18px;
+    background: #93bbfc;
+    box-shadow: 0 0 30px rgba(96, 165, 250, 0.5);
+}
+
+.ff-calibration-point.completed {
+    opacity: 0.5;
+    border-color: rgba(74, 222, 128, 0.4);
+    background: rgba(74, 222, 128, 0.05);
+    transform: translate(-50%, -50%) scale(0.8);
+    box-shadow: none;
+}
+
+.ff-calibration-point.completed .ff-cal-inner {
+    width: 8px;
+    height: 8px;
+    background: #4ade80;
+    box-shadow: none;
+}
+
+.ff-calibration-point.future {
+    opacity: 0.15;
+    transform: translate(-50%, -50%) scale(0.6);
+    border-color: rgba(96, 165, 250, 0.1);
+    background: rgba(96, 165, 250, 0.02);
+    box-shadow: none;
+}
+
+.ff-calibration-point.future .ff-cal-inner {
+    width: 6px;
+    height: 6px;
+    background: rgba(96, 165, 250, 0.3);
+    box-shadow: none;
+}
+
+.ff-calibration-point .ff-cal-label {
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+    .ff-main-layout {
+        flex-direction: column;
+    }
+    .ff-reading-panel {
+        max-width: 100%;
+    }
+    .ff-dashboard-panel {
+        width: 100%;
+        max-height: none;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    .ff-dashboard-panel .ff-card {
+        flex: 1;
+        min-width: 250px;
+    }
+    .ff-row {
+        grid-template-columns: 1fr;
+    }
+    .ff-row-bottom {
+        grid-template-columns: 1fr;
+    }
+    .ff-card-camera,
+    .ff-card-adaptation {
+        grid-column: 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .ff-header {
+        flex-direction: column;
+        gap: 10px;
+        padding: 10px 12px;
+    }
+    
+    .ff-dashboard {
+        padding: 0 8px;
+    }
+    
+    .ff-features-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .ff-adapt-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "focusflow",
+  "version": "1.0.0",
+  "description": "FocusFlow - Adaptive Attention Management System based on WebGazer.js",
+  "main": "index.html",
+  "scripts": {
+    "serve": "npx http-server . -p 8080 -o",
+    "start": "npx http-server . -p 8080 -o"
+  },
+  "keywords": ["eye-tracking", "attention", "hci", "webgazer"],
+  "license": "MIT",
+  "dependencies": {
+    "webgazer": "^3.5.3",
+    "chart.js": "^4.4.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.0"
+  }
+}

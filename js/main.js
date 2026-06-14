@@ -1,4 +1,4 @@
-/**
+/**ig
  * FocusFlow - Main Application Entry (Full Integration)
  * 
  * HCI Final Project: Adaptive Attention Management System for ADHD Readers
@@ -18,7 +18,7 @@
 
 // Global namespace
 const FocusFlow = {};
-FocusFlow.version = '2.2.0';
+FocusFlow.version = '2.3.0';
 
 // Subsystem references
 FocusFlow.perception = null;     // Member A: Gaze tracking
@@ -26,6 +26,8 @@ FocusFlow.cognition = null;      // Member A: State machine
 FocusFlow.decision = null;       // Member A: Intervention logic
 FocusFlow.readingView = null;    // Member B: Reading layout
 FocusFlow.visualEffects = null;  // Member B: Adaptive UI
+FocusFlow.focusMode = null;      // Member B: Focus mode manager
+FocusFlow.debugPanel = null;     // Member B: Debug panel
 FocusFlow.keywordExtractor = null; // Member C: NLP extraction
 FocusFlow.analytics = null;      // Member C: Attention analytics
 FocusFlow.calibration = null;    // Calibration manager
@@ -39,14 +41,16 @@ FocusFlow.gazeScaleY = 1;
 
 // Configuration
 FocusFlow.config = {
-    debug: true,
-    demoMode: false,
+    debug: false,                    // Debug panel disabled by default
+    demoMode: false,                 // Demo mode disabled by default
     useWebGazer: true,
     saveData: true,
+    showGazeDot: true,               // Gaze dot visible by default
+    trackingMode: 'gaze',
     
     // Calibration config
-    calibrationEnabled: true,      // Require 9-point calibration before tracking
-    calibrationRequired: true,      // Block reading until calibrated
+    calibrationEnabled: true,
+    calibrationRequired: true,
     
     // Member B config
     highlightIntensity: 0.15,
@@ -56,8 +60,12 @@ FocusFlow.config = {
     // Member C config
     keywordCount: 5,
     minWordLength: 3,
-    dwellForKeywords: 8000,     // ms on same block before extracting keywords
+    dwellForKeywords: 8000,
 };
+
+// Gaze dot element reference
+FocusFlow._gazeDotElement = null;
+FocusFlow._gazeDotUI = null;
 
 // Internal state
 FocusFlow._gazeHistory = [];
@@ -83,6 +91,10 @@ FocusFlow._dimStartDelay = 1500;
 FocusFlow._dimRampDuration = 3000;
 FocusFlow._gazeOffBlockStart = 0;
 FocusFlow._periodicPromptInterval = null;
+FocusFlow._demoMouseHandler = null;
+FocusFlow._demoScrollHandler = null;
+FocusFlow._webGazerStarted = false;
+FocusFlow._webGazerStarting = false;
 
 // Gaze smoothing
 FocusFlow._smoothedGazeX = 0;
@@ -117,31 +129,79 @@ FocusFlow.init = async function() {
     this.visualEffects = new VisualEffects(this.config);
     console.log('[FocusFlow] ✅ Member B - Visual Effects loaded');
 
-    // 6. Initialize Member C: Keyword Extractor
+    // 6. Initialize Member B: Focus Mode Manager
+    this.focusMode = new FocusMode();
+    console.log('[FocusFlow] ✅ Member B - Focus Mode Manager loaded');
+
+
+    // 7. Initialize Member B: Debug Panel
+    this.debugPanel = new DebugPanel();
+    console.log('[FocusFlow] ✅ Member B - Debug Panel loaded');
+
+    // 8. Initialize Member C: Keyword Extractor
     this.keywordExtractor = new KeywordExtractor(this.config);
     console.log('[FocusFlow] ✅ Member C - Keyword Extractor loaded');
 
-    // 7. Initialize Member C: Attention Analytics
+    // 9. Initialize Member C: Attention Analytics
     this.analytics = new AttentionAnalytics(this.config);
     console.log('[FocusFlow] ✅ Member C - Attention Analytics loaded');
 
     // 8. Initialize the reading content with all block word counts
     this._initBlockWordCounts();
 
-    // 9. Start WebGazer or Demo mode
+    // 9. Detect whether we are running in a secure context.
+    //    getUserMedia (and therefore WebGazer's camera tracking) only works on
+    //    https:// or http://localhost. Opening index.html directly via file://
+    //    blocks the camera API, so we must warn the user and fall back to mouse.
+    const isLocalFile = location.protocol === 'file:';
+    const isSecureContext = !isLocalFile && (
+        window.isSecureContext ||
+        location.protocol === 'https:' ||
+        location.hostname === 'localhost' ||
+        location.hostname === '127.0.0.1'
+    );
+
     if (this.config.useWebGazer && !this.config.demoMode) {
-        await this.startWebGazer();
-        
-        // 10. Run calibration after WebGazer is ready
-        if (this.config.calibrationEnabled && !this.config.demoMode) {
+        if (isLocalFile || !isSecureContext) {
+            console.warn('[FocusFlow] ⚠️ Unsafe context (file:// or non-localhost); camera API unavailable');
+            this._reportApiError(
+                'WebGazer / Camera',
+                'The page is opened through file://, so the browser blocks camera access',
+                [
+                    '• Use a local server instead (recommended):',
+                    '   In the project folder, run  npx http-server -p 8080  or  python -m http.server 8080',
+                    '   Then open  http://localhost:8080  in the browser',
+                    '• Calibration will run in Mouse Mode; the 9 calibration points will still appear'
+                ]
+            );
+            this.config.demoMode = false;
+            this.config.useWebGazer = true;
+            this.config.trackingMode = 'runtime-error';
+            this._announceTrackingMode('runtime-error', 'file protocol blocks camera/model loading');
+        } else {
+            await this.startWebGazer();
+        }
+
+        // 10. Run the 9-point calibration regardless of webgazer/mouse mode.
+        //     In mouse mode the user moves the cursor to each point; in webgazer
+        //     mode they look at each point. Either way the 9 points are shown.
+        if (this.config.calibrationEnabled && this.config.trackingMode === 'gaze') {
             await this._runCalibration();
         }
-        
-        // 11. Set up the real gaze listener (post-calibration)
-        this._setupGazeListener();
+
+        // 11. Set up the real gaze listener (only if WebGazer actually started)
+        if (this.config.trackingMode === 'gaze') {
+            this._setupGazeListener();
+        }
     } else {
         this.startDemoMode();
+
+        // Still offer calibration in pure demo mode for a consistent experience
+        if (this.config.calibrationEnabled) {
+            await this._runCalibration();
+        }
     }
+
 
     // 12. Show welcome prompt
     setTimeout(() => {
@@ -242,32 +302,69 @@ FocusFlow._runCalibration = function() {
  */
 FocusFlow.startWebGazer = async function() {
     return new Promise((resolve) => {
+        if (this._webGazerStarted || this._webGazerStarting) {
+            this.config.demoMode = false;
+            this.config.useWebGazer = true;
+            this.config.trackingMode = 'gaze';
+            this._announceTrackingMode('gaze');
+            resolve();
+            return;
+        }
+
         // --- Pre-check: browser camera API availability ---
+        if (location.protocol === 'file:') {
+            this._webGazerStarted = false;
+            this._webGazerStarting = false;
+            this.config.demoMode = false;
+            this.config.useWebGazer = true;
+            this.config.trackingMode = 'runtime-error';
+            this._announceTrackingMode('runtime-error', 'file protocol blocks camera/model loading');
+            resolve();
+            return;
+        }
+
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.warn('[FocusFlow] ⚠️ getUserMedia API 不可用（非HTTPS或不支持的浏览器）');
+            console.warn('[FocusFlow] ⚠️ getUserMedia API unavailable (non-HTTPS or unsupported browser)');
             this._reportApiError(
                 'WebGazer / getUserMedia',
-                '浏览器摄像头API (getUserMedia) 不可用',
+                'Browser camera API (getUserMedia) unavailable',
                 [
-                    '• 请使用 HTTPS 或 http://localhost 访问',
-                    '• 或使用最新版 Chrome / Edge / Firefox',
-                    '• 已自动切换到 Demo 模式（鼠标模拟）'
+                    '• Use HTTPS or http://localhost',
+                    '• Or use the latest Chrome / Edge / Firefox',
+                    '• Automatically switched to Demo Mode (mouse simulation)'
                 ]
             );
-            this.config.demoMode = true;
-            this.startDemoMode();
+            this.config.demoMode = false;
+            this.config.useWebGazer = true;
+            this.config.trackingMode = 'camera-error';
+            this._announceTrackingMode('camera-error', 'camera api unavailable');
             resolve();
             return;
         }
         
         try {
+            this._webGazerStarting = true;
+            // Keep WebGazer's video preview + green face-mesh overlay visible
+            // (this is the green tracking grid the user expects). Prediction
+            // points stay off to avoid clutter. The video preview is positioned
+            // by WebGazer itself; our sidebar canvas is a separate, lighter view.
             webgazer
                 .setRegression('ridge')
                 .saveDataAcrossSessions(true)
+                .showVideo(true)
+                .showFaceOverlay(true)
+                .showFaceFeedbackBox(true)
                 .showVideoPreview(true)
-                .showPredictionPoints(false)
+                .showPredictionPoints(this.config.showGazeDot && this.config.trackingMode !== 'mouse')
                 .begin()
+
                 .then(() => {
+                    this._webGazerStarted = true;
+                    this._webGazerStarting = false;
+                    this.config.demoMode = false;
+                    this.config.useWebGazer = true;
+                    this.config.trackingMode = 'gaze';
+                    this._announceTrackingMode('gaze');
                     console.log('[FocusFlow] ✅ WebGazer started successfully');
                     resolve();
                 })
@@ -278,37 +375,41 @@ FocusFlow.startWebGazer = async function() {
                     // Classify WebGazer error for user-friendly message
                     if (msg.includes('getUserMedia') || msg.includes('NotAllowed') || msg.includes('Permission')) {
                         this._reportApiError(
-                            'WebGazer / 摄像头',
-                            '摄像头权限被拒绝 — ' + msg,
+                            'WebGazer / Camera',
+                            'Camera permission denied - ' + msg,
                             [
-                                '• 请在浏览器地址栏左侧点击🔒，允许摄像头权限',
-                                '• 如果被多次拒绝，请在浏览器设置中重置摄像头权限',
-                                '• 已自动切换到 Demo 模式（鼠标模拟）'
+                                '• Click the lock icon in the address bar and allow camera permission',
+                                '• If permission was denied repeatedly, reset camera permission in browser settings',
+                                '• Automatically switched to Demo Mode (mouse simulation)'
                             ]
                         );
                     } else if (msg.includes('NotReadable') || msg.includes('NotFound')) {
                         this._reportApiError(
-                            'WebGazer / 摄像头',
-                            '摄像头设备不可用 — ' + msg,
+                            'WebGazer / Camera',
+                            'Camera device unavailable - ' + msg,
                             [
-                                '• 请检查摄像头是否正确连接',
-                                '• 关闭其他占用摄像头的应用（如Zoom、Teams）',
-                                '• 已自动切换到 Demo 模式'
+                                '• Check that the camera is connected correctly',
+                                '• Close other apps using the camera, such as Zoom or Teams',
+                                '• Automatically switched to Demo Mode'
                             ]
                         );
                     } else {
                         this._reportApiError(
                             'WebGazer',
-                            '启动失败: ' + msg,
+                            'Startup failed: ' + msg,
                             [
-                                '• 已自动切换到 Demo 模式（鼠标模拟）',
-                                '• 您可以继续使用全部功能'
+                                '• Automatically switched to Demo Mode (mouse simulation)',
+                                '• You can continue using all features'
                             ]
                         );
                     }
                     
-                    this.config.demoMode = true;
-                    this.startDemoMode();
+                    this._webGazerStarted = false;
+                    this._webGazerStarting = false;
+                    this.config.demoMode = false;
+                    this.config.useWebGazer = true;
+                    this.config.trackingMode = 'camera-error';
+                    this._announceTrackingMode('camera-error', 'webgazer failed');
                     resolve();
                 });
         } catch (e) {
@@ -317,15 +418,19 @@ FocusFlow.startWebGazer = async function() {
             
             this._reportApiError(
                 'WebGazer',
-                '初始化异常: ' + msg,
+                'Initialization exception: ' + msg,
                 [
-                    '• 已自动切换到 Demo 模式（鼠标模拟）',
-                    '• 您可以继续使用全部功能'
+                    '• Automatically switched to Demo Mode (mouse simulation)',
+                    '• You can continue using all features'
                 ]
             );
             
-            this.config.demoMode = true;
-            this.startDemoMode();
+            this._webGazerStarted = false;
+            this._webGazerStarting = false;
+            this.config.demoMode = false;
+            this.config.useWebGazer = true;
+            this.config.trackingMode = 'camera-error';
+            this._announceTrackingMode('camera-error', 'webgazer init error');
             resolve();
         }
     });
@@ -338,7 +443,7 @@ FocusFlow.startWebGazer = async function() {
  * @param {string[]} suggestions - List of actionable suggestions
  */
 FocusFlow._reportApiError = function(apiName, summary, suggestions) {
-    console.error(`[FocusFlow] ❌ API调用失败 [${apiName}]: ${summary}`);
+    console.error(`[FocusFlow] ❌ API call failed [${apiName}]: ${summary}`);
     if (suggestions) {
         suggestions.forEach(s => console.warn('[FocusFlow] 💡', s));
     }
@@ -348,8 +453,8 @@ FocusFlow._reportApiError = function(apiName, summary, suggestions) {
         setTimeout(() => {
             this.visualEffects.showPrompt(
                 '⚠️',
-                `${apiName} 调用失败`,
-                summary + ' — 已切换到Demo模式'
+                `${apiName} call failed`,
+                summary + ' — switched to Demo Mode'
             );
         }, 500);
     }
@@ -359,6 +464,50 @@ FocusFlow._reportApiError = function(apiName, summary, suggestions) {
         detail: { api: apiName, summary, suggestions }
     });
     document.dispatchEvent(event);
+};
+
+FocusFlow._reportApiError = function(apiName, summary, suggestions) {
+    console.error(`[FocusFlow] API issue [${apiName}]: ${summary}`);
+    if (suggestions) {
+        suggestions.forEach(s => console.warn('[FocusFlow]', s));
+    }
+
+    if (this.visualEffects && typeof this.visualEffects.showPrompt === 'function') {
+        setTimeout(() => {
+            this.visualEffects.showPrompt(
+                '⚠',
+                `${apiName} needs attention`,
+                summary + '. Check camera permission and retry.'
+            );
+        }, 500);
+    }
+
+    document.dispatchEvent(new CustomEvent('focusflow-api-error', {
+        detail: { api: apiName, summary, suggestions }
+    }));
+};
+
+FocusFlow._announceTrackingMode = function(mode, reason) {
+    document.dispatchEvent(new CustomEvent('focusflow-tracking-mode', {
+        detail: { mode, reason: reason || '' }
+    }));
+};
+
+FocusFlow.switchToMouseTracking = function(reason) {
+    this._webGazerStarted = false;
+    this._webGazerStarting = false;
+    this.config.demoMode = true;
+    this.config.useWebGazer = false;
+    this.config.trackingMode = 'mouse';
+
+    try {
+        if (window.webgazer && typeof window.webgazer.showPredictionPoints === 'function') {
+            window.webgazer.showPredictionPoints(false);
+        }
+    } catch (e) {}
+
+    this.startDemoMode();
+    this._announceTrackingMode('mouse', reason);
 };
 
 
@@ -472,9 +621,16 @@ FocusFlow._smoothGaze = function(data) {
  * Demo mode: simulate gaze data with mouse for testing
  */
 FocusFlow.startDemoMode = function() {
+    this.config.demoMode = true;
+    this.config.useWebGazer = false;
+    this.config.trackingMode = 'mouse';
+
+    if (this._demoMouseHandler) {
+        return;
+    }
     console.log('[FocusFlow] 🖱️ Starting demo mode (mouse-based simulation)');
     
-    document.addEventListener('mousemove', (e) => {
+    this._demoMouseHandler = (e) => {
         const demoData = {
             x: e.clientX,
             y: e.clientY,
@@ -488,14 +644,27 @@ FocusFlow.startDemoMode = function() {
         // Simulate face presence with occasional dropouts
         this.perception.facePresent = Math.random() > 0.05;
         this.onGazeData(demoData, elapsedTime);
-    });
+    };
+    document.addEventListener('mousemove', this._demoMouseHandler);
     
     // Simulate scroll
-    window.addEventListener('scroll', () => {
+    this._demoScrollHandler = () => {
         this.perception.lastScrollTime = performance.now();
         this.perception.scrollVelocity = Math.abs(window.scrollY - (this.perception._lastScrollY || 0));
         this.perception._lastScrollY = window.scrollY;
-    });
+    };
+    window.addEventListener('scroll', this._demoScrollHandler);
+};
+
+FocusFlow.stopDemoMode = function() {
+    if (this._demoMouseHandler) {
+        document.removeEventListener('mousemove', this._demoMouseHandler);
+        this._demoMouseHandler = null;
+    }
+    if (this._demoScrollHandler) {
+        window.removeEventListener('scroll', this._demoScrollHandler);
+        this._demoScrollHandler = null;
+    }
 };
 
 /**
@@ -534,10 +703,52 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     const blockIndex = gazeBlock ? gazeBlock.index : -1;
     const inReadingArea = gazeBlock !== null;
     
+    // Update gaze cursor position (smooth following)
+    if (this.readingView) {
+        this.readingView.updateGazeCursor(data.x, data.y);
+    }
+    
+    // Update visual effects with gaze position (radial dim center, glow)
+    if (this.visualEffects) {
+        this.visualEffects.updateGazePosition(data.x, data.y);
+    }
+    
     // ============================================
     // MEMBER B: Adaptive Visual Effects
     // ============================================
     this._applyAdaptiveUI(currentState, strategy, gazeBlock, features);
+    
+    // ============================================
+    // MEMBER B: Adaptive Typography
+    // ============================================
+    if (this.readingView && typeof this.readingView.applyAdaptiveTypography === 'function') {
+        this.readingView.applyAdaptiveTypography(currentState.name);
+    }
+    
+    // ============================================
+    // MEMBER B: Set current block for WPM tracking
+    // ============================================
+    if (gazeBlock && gazeBlock.index !== this._lastBlockIndex) {
+        const text = gazeBlock.element ? gazeBlock.element.textContent || '' : '';
+        this.readingView.setCurrentBlock(gazeBlock.index, text);
+    }
+
+    // ============================================
+    // MEMBER B: Debug Panel Update
+    // ============================================
+    if (this.debugPanel && this.debugPanel.isVisible()) {
+        this.debugPanel.setGaze(data.x, data.y);
+        if (gazeBlock) {
+            this.debugPanel.setBlock(gazeBlock.index, gazeBlock.blockId);
+        }
+        this.debugPanel.setCognitiveState(currentState.name);
+        this.debugPanel.setFocusMode(this.focusMode ? this.focusMode.getCurrentMode() : 'standard');
+        const wpm = this.readingView ? this.readingView.getWpm() : 0;
+        this.debugPanel.setWpm(wpm);
+        this.debugPanel.setDimLevel(this.visualEffects ? this.visualEffects.dimIntensity : 0);
+        this.debugPanel.setEffectsCount(this.visualEffects ? this.visualEffects._activeEffectCount : 0);
+        this.debugPanel.updateData({});
+    }
     
     // ============================================
     // MEMBER C: Keyword Extraction (on dwell)
@@ -596,7 +807,7 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
         this.readingView.refreshBlockRects();
         this.visualEffects.highlightElement(
             gazeBlock.element,
-            this.config.highlightIntensity
+            state.name
         );
         
         // Auto-scroll ONLY when:
@@ -716,6 +927,7 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
     }
 };
 
+
 /**
  * Check if we should trigger keyword extraction
  */
@@ -782,7 +994,7 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     const strategyNameEl = document.getElementById('ff-strategy-name');
     const strategyDescEl = document.getElementById('ff-strategy-desc');
     if (strategyNameEl) {
-        strategyNameEl.textContent = strategy.name || '无干预';
+        strategyNameEl.textContent = strategy.name || 'No intervention';
     }
     if (strategyDescEl) {
         strategyDescEl.textContent = strategy.description || '';

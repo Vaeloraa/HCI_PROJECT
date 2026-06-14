@@ -17,17 +17,17 @@ class CalibrationManager {
         // 9 calibration points (3×3 grid) as percentages of viewport
         this.points = [
             // Row 1: top
-            { x: 0.15, y: 0.15, label: 'Top-Left' },
-            { x: 0.50, y: 0.15, label: 'Top-Center' },
-            { x: 0.85, y: 0.15, label: 'Top-Right' },
+            { x: 0.20, y: 0.16, label: 'Top-Left' },
+            { x: 0.50, y: 0.16, label: 'Top-Center' },
+            { x: 0.80, y: 0.16, label: 'Top-Right' },
             // Row 2: middle
-            { x: 0.15, y: 0.50, label: 'Middle-Left' },
-            { x: 0.50, y: 0.50, label: 'Middle-Center' },
-            { x: 0.85, y: 0.50, label: 'Middle-Right' },
+            { x: 0.20, y: 0.46, label: 'Middle-Left' },
+            { x: 0.50, y: 0.46, label: 'Middle-Center' },
+            { x: 0.80, y: 0.46, label: 'Middle-Right' },
             // Row 3: bottom
-            { x: 0.15, y: 0.85, label: 'Bottom-Left' },
-            { x: 0.50, y: 0.85, label: 'Bottom-Center' },
-            { x: 0.85, y: 0.85, label: 'Bottom-Right' }
+            { x: 0.20, y: 0.76, label: 'Bottom-Left' },
+            { x: 0.50, y: 0.76, label: 'Bottom-Center' },
+            { x: 0.80, y: 0.76, label: 'Bottom-Right' }
         ];
         
         this.currentPointIndex = 0;
@@ -95,8 +95,8 @@ class CalibrationManager {
             position: fixed;
             top: 0; left: 0;
             width: 100%; height: 100%;
-            background: rgba(10, 14, 26, 0.92);
-            backdrop-filter: blur(8px);
+            background: #f8fafc;
+            backdrop-filter: none;
             z-index: 9999;
             display: flex;
             flex-direction: column;
@@ -105,23 +105,40 @@ class CalibrationManager {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             transition: opacity 0.5s ease;
         `;
+
+        const guideGrid = document.createElement('div');
+        guideGrid.style.cssText = `
+            position: absolute;
+            left: 20%;
+            top: 16%;
+            width: 60%;
+            height: 60%;
+            z-index: 1;
+            pointer-events: none;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            border-radius: 18px;
+            background:
+                linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+                linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+        `;
+        this._overlay.appendChild(guideGrid);
         
         // Instruction panel at top
         const instructionPanel = document.createElement('div');
         instructionPanel.style.cssText = `
             position: absolute;
-            top: 30px;
+            top: 22px;
             left: 50%;
             transform: translateX(-50%);
             text-align: center;
             z-index: 10;
         `;
         instructionPanel.innerHTML = `
-            <div style="font-size: 28px; font-weight: 700; color: #e2e8f0; margin-bottom: 8px;">
-                🎯 视线校准
+            <div style="font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+                WebGazer Calibration
             </div>
-            <div id="ff-calibration-instruction" style="font-size: 16px; color: #94a3b8; max-width: 500px;">
-                请注视屏幕上高亮的圆点，然后<strong>点击鼠标</strong>或按<strong>空格键</strong>确认
+            <div id="ff-calibration-instruction" style="font-size: 14px; color: #475569; max-width: 560px;">
+                Look at the highlighted point, then click or press Space.
             </div>
         `;
         this._overlay.appendChild(instructionPanel);
@@ -131,22 +148,22 @@ class CalibrationManager {
         const statusPanel = document.createElement('div');
         statusPanel.style.cssText = `
             position: absolute;
-            bottom: 80px;
+            bottom: 22px;
             left: 50%;
             transform: translateX(-50%);
             text-align: center;
             z-index: 10;
         `;
         statusPanel.innerHTML = `
-            <div id="ff-calibration-progress" style="font-size: 18px; font-weight: 600; color: #60a5fa; margin-bottom: 12px;">
-                第 1 / 9 点
+             <div id="ff-calibration-progress" style="font-size: 16px; font-weight: 700; color: #2563eb; margin-bottom: 6px;">
+                Point 1 / 9
             </div>
-            <div id="ff-calibration-status" style="font-size: 14px; color: #64748b;">
-                等待确认...
+            <div id="ff-calibration-status" style="font-size: 12px; color: #64748b;">
+                Waiting...
             </div>
             <!-- Progress bar -->
-            <div style="width: 300px; height: 4px; background: #1e293b; border-radius: 2px; margin: 16px auto 0; overflow: hidden;">
-                <div id="ff-calibration-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #60a5fa, #a78bfa); border-radius: 2px; transition: width 0.5s ease;"></div>
+            <div style="width: 320px; height: 5px; background: #e2e8f0; border-radius: 999px; margin: 10px auto 0; overflow: hidden;">
+                <div id="ff-calibration-bar" style="width: 0%; height: 100%; background: #2563eb; border-radius: 999px; transition: width 0.5s ease;"></div>
             </div>
         `;
         this._overlay.appendChild(statusPanel);
@@ -155,28 +172,28 @@ class CalibrationManager {
         
         // Skip button
         const skipBtn = document.createElement('button');
-        skipBtn.textContent = '⏭️ 跳过校准 (使用鼠标)';
+        skipBtn.textContent = 'Skip calibration';
         skipBtn.style.cssText = `
             position: absolute;
-            bottom: 30px;
+            bottom: 22px;
             right: 30px;
             padding: 10px 20px;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.1);
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
             border-radius: 8px;
-            color: #94a3b8;
+            color: #475569;
             font-size: 14px;
             cursor: pointer;
             z-index: 10;
             transition: all 0.2s;
         `;
         skipBtn.addEventListener('mouseenter', () => {
-            skipBtn.style.background = 'rgba(255,255,255,0.12)';
-            skipBtn.style.color = '#e2e8f0';
+            skipBtn.style.background = '#f1f5f9';
+            skipBtn.style.color = '#111827';
         });
         skipBtn.addEventListener('mouseleave', () => {
-            skipBtn.style.background = 'rgba(255,255,255,0.08)';
-            skipBtn.style.color = '#94a3b8';
+            skipBtn.style.background = '#ffffff';
+            skipBtn.style.color = '#475569';
         });
         skipBtn.addEventListener('click', () => this._skipCalibration());
         this._overlay.appendChild(skipBtn);
@@ -191,11 +208,11 @@ class CalibrationManager {
                 left: ${pt.x * 100}%;
                 top: ${pt.y * 100}%;
                 transform: translate(-50%, -50%);
-                width: 50px;
-                height: 50px;
+                width: 44px;
+                height: 44px;
                 border-radius: 50%;
-                border: 2px solid rgba(96, 165, 250, 0.2);
-                background: rgba(96, 165, 250, 0.05);
+                border: 2px solid rgba(37, 99, 235, 0.26);
+                background: rgba(255, 255, 255, 0.96);
                 pointer-events: none;
                 z-index: 5;
                 transition: all 0.4s ease;
@@ -211,7 +228,7 @@ class CalibrationManager {
                 width: 12px;
                 height: 12px;
                 border-radius: 50%;
-                background: #60a5fa;
+                background: #2563eb;
                 transition: all 0.3s ease;
                 box-shadow: 0 0 20px rgba(96, 165, 250, 0.3);
             `;
@@ -225,7 +242,7 @@ class CalibrationManager {
                 left: 50%;
                 transform: translateX(-50%);
                 font-size: 11px;
-                color: #64748b;
+                color: #475569;
                 white-space: nowrap;
             `;
             label.textContent = `${i + 1}`;
@@ -259,23 +276,23 @@ class CalibrationManager {
             if (i === index) {
                 el.style.opacity = '1';
                 el.style.transform = 'translate(-50%, -50%) scale(1)';
-                el.style.borderColor = 'rgba(96, 165, 250, 0.6)';
-                el.style.background = 'rgba(96, 165, 250, 0.1)';
-                el.style.boxShadow = '0 0 40px rgba(96, 165, 250, 0.15)';
+                el.style.borderColor = '#2563eb';
+                el.style.background = '#ffffff';
+                el.style.boxShadow = '0 8px 24px rgba(37, 99, 235, 0.18)';
                 
                 // Animate inner dot
                 const dot = el.querySelector('div');
                 if (dot) {
                     dot.style.width = '16px';
                     dot.style.height = '16px';
-                    dot.style.background = '#93bbfc';
-                    dot.style.boxShadow = '0 0 30px rgba(96, 165, 250, 0.5)';
+                    dot.style.background = '#2563eb';
+                    dot.style.boxShadow = '0 0 0 8px rgba(37, 99, 235, 0.12)';
                 }
             } else if (i < index) {
                 // Completed points - show as green checkmarks
                 el.style.opacity = '0.5';
-                el.style.borderColor = 'rgba(74, 222, 128, 0.4)';
-                el.style.background = 'rgba(74, 222, 128, 0.05)';
+                el.style.borderColor = 'rgba(16, 185, 129, 0.55)';
+                el.style.background = '#ecfdf5';
                 el.style.transform = 'translate(-50%, -50%) scale(0.8)';
                 el.style.boxShadow = 'none';
                 
@@ -290,15 +307,15 @@ class CalibrationManager {
                 // Future points - hidden/faded
                 el.style.opacity = '0.15';
                 el.style.transform = 'translate(-50%, -50%) scale(0.6)';
-                el.style.borderColor = 'rgba(96, 165, 250, 0.1)';
-                el.style.background = 'rgba(96, 165, 250, 0.02)';
+                el.style.borderColor = 'rgba(148, 163, 184, 0.35)';
+                el.style.background = '#f8fafc';
                 el.style.boxShadow = 'none';
                 
                 const dot = el.querySelector('div');
                 if (dot) {
                     dot.style.width = '6px';
                     dot.style.height = '6px';
-                    dot.style.background = 'rgba(96, 165, 250, 0.3)';
+                    dot.style.background = 'rgba(100, 116, 139, 0.45)';
                     dot.style.boxShadow = 'none';
                 }
             }
@@ -306,10 +323,10 @@ class CalibrationManager {
         
         // Update progress text
         if (this._progressEl) {
-            this._progressEl.textContent = `第 ${index + 1} / ${this.points.length} 点`;
+            this._progressEl.textContent = `Point ${index + 1} / ${this.points.length}`;
         }
         if (this._statusEl) {
-            this._statusEl.textContent = '👁️ 请注视这个圆点，然后点击或按空格键';
+            this._statusEl.textContent = 'Look at this point, then click or press Space.';
         }
         
         // Update progress bar
@@ -335,10 +352,15 @@ class CalibrationManager {
     _startAutoCollect() {
         this._stopAutoCollect();
         
-        // Collect a sample every 200ms
+        // Continuously gather WebGazer predictions in the background while the
+        // user looks at the point. These are buffered and the most recent ones
+        // are used when the user explicitly confirms by clicking / pressing Space.
+        // NOTE: We intentionally DO NOT auto-confirm on a timer. The user must
+        // click or press Space to advance — otherwise calibration would race
+        // through all 9 points on its own before the user is ready.
         this._collectInterval = setInterval(() => {
             if (!this.isCalibrating) return;
-            
+
             // Get current WebGazer prediction
             let gazeData = null;
             try {
@@ -348,7 +370,7 @@ class CalibrationManager {
             } catch (e) {
                 // WebGazer not ready
             }
-            
+
             if (gazeData && gazeData.x !== undefined && gazeData.y !== undefined) {
                 this.currentSamples.push({
                     x: gazeData.x,
@@ -356,24 +378,20 @@ class CalibrationManager {
                     time: performance.now(),
                     targetPoint: this.points[this.currentPointIndex]
                 });
-                
-                // Update status with sample count
-                if (this._statusEl) {
-                    this._statusEl.textContent = `👁️ 正在采集... (${this.currentSamples.length}/${this.samplesPerPoint})`;
+                // Keep only the most recent samples so the average reflects
+                // where the user is looking right before they confirm.
+                if (this.currentSamples.length > this.samplesPerPoint * 4) {
+                    this.currentSamples.shift();
                 }
-                
+
                 if (this.debug) {
-                    console.log(`[Calibration] Sample ${this.currentSamples.length}: (${gazeData.x.toFixed(0)}, ${gazeData.y.toFixed(0)})`);
+                    console.log(`[Calibration] Buffered sample ${this.currentSamples.length}: (${gazeData.x.toFixed(0)}, ${gazeData.y.toFixed(0)})`);
                 }
             }
         }, 200);
-        
-        // Auto-confirm after enough samples + a delay for the user to have looked
-        if (this._collectTimer) clearTimeout(this._collectTimer);
-        this._collectTimer = setTimeout(() => {
-            this._confirmPoint();
-        }, this._autoCollectDelay + this.samplesPerPoint * 250);
+        // No auto-confirm timer — advancement happens only on user input.
     }
+
 
     _stopAutoCollect() {
         if (this._collectInterval) {
@@ -388,9 +406,13 @@ class CalibrationManager {
 
     /**
      * Bind keyboard and mouse events for confirmation
+     * ONLY on the calibration overlay, not the entire document.
+     * This prevents accidental clicks in other UI areas from auto-advancing
+     * calibration points.
      */
     _bindEvents() {
         this._handleKeyDown = (e) => {
+            if (!this.isCalibrating) return;
             if (e.code === 'Space' || e.code === 'Enter') {
                 e.preventDefault();
                 this._confirmPoint();
@@ -400,22 +422,34 @@ class CalibrationManager {
             }
         };
         
+        // Only confirm on clicks that are ON the overlay itself
+        // (not clicks on buttons inside it, and definitely not
+        //  clicks elsewhere on the page)
         this._handleClick = (e) => {
-            // Don't count clicks on skip button
+            if (!this.isCalibrating) return;
+            // Must be a click on the overlay or one of its children
+            if (!this._overlay || !this._overlay.contains(e.target)) return;
+            // Don't count clicks on buttons
             if (e.target.tagName === 'BUTTON') return;
+            // Don't count clicks on progress/status text
+            if (e.target.closest && (
+                e.target.closest('#ff-calibration-progress') ||
+                e.target.closest('#ff-calibration-status') ||
+                e.target.closest('#ff-calibration-instruction')
+            )) return;
             this._confirmPoint();
         };
         
         document.addEventListener('keydown', this._handleKeyDown);
-        document.addEventListener('click', this._handleClick);
+        this._overlay.addEventListener('click', this._handleClick);
     }
 
     _unbindEvents() {
         if (this._handleKeyDown) {
             document.removeEventListener('keydown', this._handleKeyDown);
         }
-        if (this._handleClick) {
-            document.removeEventListener('click', this._handleClick);
+        if (this._handleClick && this._overlay) {
+            this._overlay.removeEventListener('click', this._handleClick);
         }
     }
 
@@ -450,8 +484,8 @@ class CalibrationManager {
         
         // Show confirmation flash
         if (this._statusEl) {
-            this._statusEl.textContent = '✅ 已采集！';
-            this._statusEl.style.color = '#4ade80';
+            this._statusEl.textContent = 'Collected';
+            this._statusEl.style.color = '#16a34a';
         }
         
         // Briefly flash the point green
@@ -484,10 +518,10 @@ class CalibrationManager {
         this.isComplete = true;
         
         if (this._progressEl) {
-            this._progressEl.textContent = '✅ 校准完成！';
+            this._progressEl.textContent = 'Calibration complete';
         }
         if (this._statusEl) {
-            this._statusEl.textContent = '🎉 所有9个点已校准，正在优化追踪模型...';
+            this._statusEl.textContent = 'All 9 points are complete. Optimizing the gaze model...';
             this._statusEl.style.color = '#4ade80';
         }
         
@@ -507,8 +541,8 @@ class CalibrationManager {
             // Show success message
             if (this._instructionEl) {
                 this._instructionEl.innerHTML = `
-                    <div style="font-size: 20px; color: #4ade80; margin-bottom: 8px;">✨ 校准成功！</div>
-                    <div style="font-size: 14px; color: #94a3b8;">视线追踪已优化，即将开始阅读...</div>
+                    <div style="font-size: 20px; color: #4ade80; margin-bottom: 8px;">✨ Calibration complete!</div>
+                    <div style="font-size: 14px; color: #94a3b8;">Gaze tracking is optimized. Starting reading...</div>
                 `;
             }
             

@@ -1,0 +1,15 @@
+{
+  "name": "focusflow-a-module",
+  "version": "1.0.0",
+  "description": "FocusFlow A模块 - 眼动追踪与状态判定",
+  "main": "server/ws-server.js",
+  "scripts": {
+    "http": "node server/http-server.js",
+    "ws": "node server/ws-server.js",
+    "start": "node server/http-server.js"
+  },
+  "dependencies": {
+    "webgazer": "^3.5.3",
+    "ws": "^8.16.0"
+  }
+}

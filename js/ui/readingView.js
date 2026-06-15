@@ -625,6 +625,7 @@ class ReadingView {
         }
 
         this._snapshotOriginals();
+        this.refreshBlockRects();
     }
 
     getBlockElement(blockIndex) {
@@ -905,6 +906,9 @@ class ReadingView {
     _bindLayoutListeners() {
         window.addEventListener('scroll', this._boundScheduleRectRefresh, { passive: true });
         window.addEventListener('resize', this._boundScheduleRectRefresh, { passive: true });
+        if (this.container) {
+            this.container.addEventListener('scroll', this._boundScheduleRectRefresh, { passive: true });
+        }
     }
 
     /**
@@ -915,36 +919,70 @@ class ReadingView {
      * @returns {Object|null} { index, blockId, element, rect }
      */
     getBlockAtGaze(gazeX, gazeY) {
-        if (this.blockElements.length === 0) return null;
+        if (this.blockElements.length === 0 || !this.container) return null;
 
-        if (this.blockRects.length !== this.blockElements.length) {
-            this.refreshBlockRects();
-        }
+        this.refreshBlockRects();
 
         const readingRect = this.container.getBoundingClientRect();
-        
-        if (gazeY < readingRect.top || gazeY > readingRect.bottom) {
+        if (gazeX < readingRect.left || gazeX > readingRect.right ||
+            gazeY < readingRect.top || gazeY > readingRect.bottom) {
             return null;
+        }
+
+        const hitEl = document.elementFromPoint(gazeX, gazeY);
+        const blockEl = hitEl && typeof hitEl.closest === 'function'
+            ? hitEl.closest('.ff-block')
+            : null;
+        if (blockEl && this.container.contains(blockEl)) {
+            const index = this.blockElements.indexOf(blockEl);
+            if (index >= 0) {
+                return {
+                    index,
+                    blockId: blockEl.dataset.blockId,
+                    element: blockEl,
+                    rect: this.blockRects[index]
+                };
+            }
+        }
+
+        let boundsHitIndex = -1;
+        let smallestArea = Infinity;
+        for (let i = 0; i < this.blockRects.length; i++) {
+            const rect = this.blockRects[i];
+            if (gazeX >= rect.left && gazeX <= rect.right &&
+                gazeY >= rect.top && gazeY <= rect.bottom) {
+                const area = rect.width * rect.height;
+                if (area < smallestArea) {
+                    smallestArea = area;
+                    boundsHitIndex = i;
+                }
+            }
+        }
+        if (boundsHitIndex >= 0) {
+            const el = this.blockElements[boundsHitIndex];
+            return {
+                index: boundsHitIndex,
+                blockId: el.dataset.blockId,
+                element: el,
+                rect: this.blockRects[boundsHitIndex]
+            };
         }
 
         let closestIndex = -1;
         let closestDistance = Infinity;
-
         for (let i = 0; i < this.blockRects.length; i++) {
             const rect = this.blockRects[i];
-            const blockCenterY = rect.top + rect.height / 2;
-            const distance = Math.abs(gazeY - blockCenterY);
-
-            const inHorizontalRange = gazeX >= rect.left - 50 && gazeX <= rect.right + 50;
-            const adjustedDistance = inHorizontalRange ? distance * 0.7 : distance;
-
-            if (adjustedDistance < closestDistance) {
-                closestDistance = adjustedDistance;
+            const centerY = rect.top + rect.height / 2;
+            const distance = Math.abs(gazeY - centerY);
+            const inHorizontal = gazeX >= rect.left - 20 && gazeX <= rect.right + 20;
+            const adjusted = inHorizontal ? distance * 0.8 : distance * 1.2;
+            if (adjusted < closestDistance) {
+                closestDistance = adjusted;
                 closestIndex = i;
             }
         }
 
-        if (closestIndex >= 0 && closestDistance < 200) {
+        if (closestIndex >= 0 && closestDistance < 120) {
             const el = this.blockElements[closestIndex];
             return {
                 index: closestIndex,

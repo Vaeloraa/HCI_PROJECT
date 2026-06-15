@@ -469,6 +469,35 @@ class AttentionAnalytics {
     }
 
     /**
+     * Aggregate session time by cognitive state for proportion charts.
+     * @returns {{ state: string, durationMs: number, percent: number }[]}
+     */
+    getStateTimeDistribution() {
+        const totals = {};
+
+        for (const item of this.stateTimeline) {
+            if (!item || !item.state) continue;
+            totals[item.state] = (totals[item.state] || 0) + (item.durationMs || 0);
+        }
+
+        if (this._lastStateName) {
+            const ongoing = Math.max(0, Date.now() - this._lastStateChangeTime);
+            totals[this._lastStateName] = (totals[this._lastStateName] || 0) + ongoing;
+        }
+
+        const grandTotal = Object.values(totals).reduce((sum, ms) => sum + ms, 0);
+        if (grandTotal <= 0) return [];
+
+        return Object.entries(totals)
+            .map(([state, durationMs]) => ({
+                state,
+                durationMs,
+                percent: Math.round((durationMs / grandTotal) * 1000) / 10
+            }))
+            .sort((a, b) => b.durationMs - a.durationMs);
+    }
+
+    /**
      * Full session report for visualization / experiment export.
      */
     generateSessionReport(readingView) {
@@ -488,6 +517,7 @@ class AttentionAnalytics {
             regressionRate: summary.regressionRate,
             blockHeatmap: this.getBlockHeatmap(totalBlocks),
             stateTimeline: this.stateTimeline,
+            stateDistribution: this.getStateTimeDistribution(),
             comprehensionAssists: this.comprehensionAssists.length,
             distractionEpisodes: this.distractionEpisodes,
             recoveryEpisodes: this.recoveryEpisodes,

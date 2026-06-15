@@ -138,7 +138,6 @@
                         <div class="ff-state-info">
                             <span class="ff-state-label" data-i18n="state.cognitive">认知状态</span>
                             <span class="ff-state-name" id="ff-state-name">Normal</span>
-                            <span class="ff-state-duration" id="ff-state-desc">Focused reading</span>
                         </div>
                         <div class="ff-state-timer">
                             <span id="ff-state-duration">0.0</span>s
@@ -149,9 +148,7 @@
                         <div class="ff-strategy-info">
                             <span class="ff-strategy-label" data-i18n="state.intervention">干预策略</span>
                             <span class="ff-strategy-name" id="ff-strategy-name">No intervention</span>
-                            <span class="ff-strategy-desc" id="ff-strategy-desc">No action needed</span>
                         </div>
-                        <span class="ff-badge" id="ff-escalation-badge" hidden>低</span>
                     </div>
                 </div>
             </div>
@@ -185,30 +182,15 @@
                 </div>
             </div>
 
-            <!-- 🎯 Goal Setting Card -->
-            <div class="ff-card ff-card-goal" id="card-goal">
+
+            <!-- Cognitive State Time Share -->
+            <div class="ff-card ff-card-state-share" id="card-state-share">
                 <div class="ff-card-header">
-                    <h2 data-i18n="goal.title">🎯 Reading Goal</h2>
-                    <button class="ff-btn-sm" id="btn-set-goal" onclick="openGoalDialog()" data-i18n="btn.set">⚙️ Set</button>
+                    <h2 data-i18n="chart.stateShare">📊 State Time Share</h2>
                 </div>
-                <div class="ff-card-body" id="card-goal-body">
-                    <div class="ff-goal-status">
-                        <div class="ff-goal-row">
-                            <span class="ff-goal-label" data-i18n="goal.targetWords">📖 Target Words</span>
-                            <span class="ff-goal-value" id="ff-goal-words">---</span>
-                        </div>
-                        <div class="ff-goal-row">
-                            <span class="ff-goal-label" data-i18n="goal.timeLimit">⏱️ Time Limit</span>
-                            <span class="ff-goal-value" id="ff-goal-time">---</span>
-                        </div>
-                        <div class="ff-goal-row">
-                            <span class="ff-goal-label" data-i18n="goal.progress">📊 Progress</span>
-                            <span class="ff-goal-value" id="ff-goal-progress">---</span>
-                        </div>
-                        <div class="ff-goal-progress-bar" style="margin-top:6px;">
-                            <div class="ff-goal-progress-fill" id="ff-goal-bar" style="width:0%"></div>
-                        </div>
-                        <div class="ff-goal-empty" id="ff-goal-empty" data-i18n="goal.empty">Click Set to define a reading goal</div>
+                <div class="ff-card-body">
+                    <div class="ff-sidebar-state-share" id="ff-state-share">
+                        <p class="ff-state-share-empty" data-i18n="chart.waiting">Waiting for data...</p>
                     </div>
                 </div>
             </div>
@@ -285,7 +267,7 @@
     <script src="js/nlp/llmTranslateManager.js?v=2.6.0"></script>
     <script src="js/nlp/paragraphSummarizer.js?v=2.6.0"></script>
     <script src="js/analytics/attentionAnalytics.js?v=2.4.0"></script>
-    <script src="js/analytics/sessionReport.js?v=2.4.0"></script>
+    <script src="js/analytics/sessionReport.js?v=2.5.0"></script>
     
     <!-- 6. Main Application Orchestrator -->
     <script src="js/main.js?v=2.6.0"></script>
@@ -297,6 +279,7 @@
         let demoInterval = null;
         let updateInterval = null;
         let timelineHistory = [];
+        let _lastTimelineRenderKey = '';
         let logEntries = 0;
         const MAX_TIMELINE = 20;
         
@@ -560,10 +543,6 @@
                     if (FocusFlow.visualEffects && FocusFlow.visualEffects.showPrompt) {
                         const t = (key, params) => (typeof I18n !== 'undefined' ? I18n.t(key, params) : key);
                         FocusFlow.visualEffects.showPrompt('⏰', t('timer.timeUp.title'), t('timer.timeUp.sub'));
-                    }
-                    // Auto-generate session summary if a goal is active
-                    if (typeof showSessionSummary === 'function' && sessionGoal.active) {
-                        showSessionSummary();
                     }
                     return;
                 }
@@ -892,6 +871,7 @@
             if (typeof syncTrackingToggleUI === 'function') syncTrackingToggleUI();
             if (typeof bindTrackingToggle === 'function') bindTrackingToggle();
             if (typeof syncGazeDotButtonUI === 'function') syncGazeDotButtonUI();
+            updateTimeline({ force: true });
         }
 
         document.addEventListener('focusflow-lang-change', refreshLanguageUI);
@@ -1498,6 +1478,8 @@
             if (timelineHistory.length > MAX_TIMELINE) {
                 timelineHistory.shift();
             }
+
+            updateTimeline();
             
             // Log
             const prevName = detail.previousState ? detail.previousState.name : 'None';
@@ -1536,8 +1518,7 @@
                 updateThresholdDisplay(thresholds, profile);
             }
             
-            // Update timeline
-            updateTimeline();
+            updateStateShare();
         }
 
         function updateStateCardStyle(state) {
@@ -1615,21 +1596,39 @@
         }
 
         // ====== TIMELINE ======
-        function updateTimeline() {
+        function updateTimeline(options = {}) {
             const container = document.getElementById('ff-timeline');
-            
+            if (!container) return;
+
+            const lang = (typeof I18n !== 'undefined') ? I18n.lang : 'en';
+            const emptyKey = `empty::${lang}`;
+
             if (timelineHistory.length === 0) {
-                container.innerHTML = '<div class="ff-timeline-empty">Waiting for data...</div>';
+                if (options.force || _lastTimelineRenderKey !== emptyKey) {
+                    const waiting = (typeof I18n !== 'undefined') ? I18n.t('chart.waiting') : 'Waiting for data...';
+                    container.innerHTML = `<div class="ff-timeline-empty">${waiting}</div>`;
+                    _lastTimelineRenderKey = emptyKey;
+                }
                 return;
             }
-            
+
+            const dataKey = timelineHistory.map((entry) => `${entry.state}|${entry.time}`).join(';');
+            const renderKey = `${dataKey}::${lang}`;
+            if (!options.force && renderKey === _lastTimelineRenderKey) {
+                return;
+            }
+
+            const shouldAutoScroll = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+            const prevDataKey = _lastTimelineRenderKey.split('::')[0] || '';
+            const hadNewEntry = dataKey !== prevDataKey;
+
             const colors = {
                 'Normal': '#4CAF50',
                 'Distracted': '#FF9800',
                 'Struggling': '#F44336',
                 'Idle': '#94a3b8'
             };
-            
+
             let html = '';
             for (const entry of timelineHistory) {
                 const displayState = (FocusFlow.decision && FocusFlow.decision.interventionStrategy)
@@ -1648,9 +1647,33 @@
                     </div>
                 `;
             }
-            
+
             container.innerHTML = html;
-            container.scrollTop = container.scrollHeight;
+            if (hadNewEntry && (shouldAutoScroll || timelineHistory.length === 1)) {
+                container.scrollTop = container.scrollHeight;
+            }
+
+            _lastTimelineRenderKey = renderKey;
+        }
+
+        function updateStateShare() {
+            const container = document.getElementById('ff-state-share');
+            if (!container) return;
+
+            const t = (key, params) => (typeof I18n !== 'undefined' ? I18n.t(key, params) : key);
+
+            if (!FocusFlow.analytics || typeof FocusFlow.analytics.getStateTimeDistribution !== 'function') {
+                container.innerHTML = `<p class="ff-state-share-empty">${t('chart.waiting')}</p>`;
+                return;
+            }
+
+            const distribution = FocusFlow.analytics.getStateTimeDistribution();
+            if (!distribution.length || typeof SessionReport === 'undefined') {
+                container.innerHTML = `<p class="ff-state-share-empty">${t('chart.waiting')}</p>`;
+                return;
+            }
+
+            container.innerHTML = SessionReport._renderStateDistribution(distribution, t);
         }
 
         // ====== LOGGING ======
@@ -1978,6 +2001,7 @@
             }
 
             timelineHistory = [];
+            _lastTimelineRenderKey = '';
             simState = {
                 phase: 0, phaseTime: 0,
                 facePresent: true, interactionActive: true,
@@ -1992,6 +2016,12 @@
             const timelineEl = document.getElementById('ff-timeline');
             if (timelineEl) {
                 timelineEl.innerHTML = '<div class="ff-timeline-empty">Waiting for data...</div>';
+            }
+
+            const stateShareEl = document.getElementById('ff-state-share');
+            if (stateShareEl) {
+                const waiting = (typeof I18n !== 'undefined') ? I18n.t('chart.waiting') : 'Waiting for data...';
+                stateShareEl.innerHTML = `<p class="ff-state-share-empty">${waiting}</p>`;
             }
 
             log('🔄', typeof I18n !== 'undefined' ? I18n.t('reset.done') : 'System reset');
@@ -2009,231 +2039,6 @@
             }
             if (FocusFlow.shutdown) FocusFlow.shutdown();
         });
-
-        // ====== GOAL SETTING & SESSION SUMMARY (Feature 5) ======
-        let sessionGoal = {
-            active: false,
-            targetWords: null,
-            timeLimit: null,
-            startTime: null,
-            totalWordsRead: 0,
-            distractions: 0,
-            totalReadingTime: 0
-        };
-
-        window.openGoalDialog = function() {
-            const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
-            const existing = document.querySelector('.ff-dialog-overlay');
-            if (existing) existing.remove();
-
-            const overlay = document.createElement('div');
-            overlay.className = 'ff-dialog-overlay';
-            overlay.innerHTML = `
-                <div class="ff-dialog">
-                    <div class="ff-dialog-header">
-                        <h3>🎯 ${t('goal.dialogTitle')}</h3>
-                        <button class="ff-dialog-close" onclick="this.closest('.ff-dialog-overlay').remove()">&times;</button>
-                    </div>
-                    <div class="ff-dialog-body">
-                        <label>📖 ${t('goal.wordsLabel')}</label>
-                        <input type="number" id="goal-input-words" placeholder="e.g. 5000" min="100" step="100" value="${sessionGoal.targetWords || ''}">
-                        <label>⏱️ ${t('goal.timeLabel')}</label>
-                        <input type="number" id="goal-input-time" placeholder="e.g. 30" min="1" step="5" value="${sessionGoal.timeLimit || ''}">
-                        <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">
-                            💡 ${t('goal.hint')}
-                        </p>
-                    </div>
-                    <div class="ff-dialog-footer">
-                        <button class="ff-btn ff-btn-secondary" onclick="this.closest('.ff-dialog-overlay').remove()">${t('btn.cancel')}</button>
-                        <button class="ff-btn ff-btn-primary" onclick="saveGoalSettings()">✅ ${t('btn.saveGoal')}</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-
-            overlay.addEventListener('click', function(e) {
-                if (e.target === overlay) overlay.remove();
-            });
-        };
-
-        window.saveGoalSettings = function() {
-            const wordsInput = document.getElementById('goal-input-words');
-            const timeInput = document.getElementById('goal-input-time');
-            const wordsVal = parseInt(wordsInput.value) || null;
-            const timeMin = parseInt(timeInput.value) || null;
-
-            sessionGoal.active = (wordsVal !== null || timeMin !== null);
-            sessionGoal.targetWords = wordsVal;
-            sessionGoal.timeLimit = timeMin ? timeMin * 60 * 1000 : null; // convert to ms
-            sessionGoal.startTime = Date.now();
-            sessionGoal.totalWordsRead = 0;
-            sessionGoal.distractions = 0;
-            sessionGoal.totalReadingTime = 0;
-
-            // Update UI
-            updateGoalDisplay();
-
-            // Close dialog
-            document.querySelector('.ff-dialog-overlay')?.remove();
-
-            log('🎯', `Goal set: ${wordsVal ? wordsVal + ' words' : ''} ${timeMin ? timeMin + ' min' : ''}`);
-        };
-
-        function updateGoalDisplay() {
-            const goalWords = document.getElementById('ff-goal-words');
-            const goalTime = document.getElementById('ff-goal-time');
-            const goalProgress = document.getElementById('ff-goal-progress');
-            const goalBar = document.getElementById('ff-goal-bar');
-            const goalEmpty = document.getElementById('ff-goal-empty');
-
-            if (!sessionGoal.active) {
-                if (goalWords) goalWords.textContent = '---';
-                if (goalTime) goalTime.textContent = '---';
-                if (goalProgress) goalProgress.textContent = '---';
-                if (goalBar) goalBar.style.width = '0%';
-                if (goalEmpty) goalEmpty.style.display = 'block';
-                return;
-            }
-
-            if (goalEmpty) goalEmpty.style.display = 'none';
-
-            if (goalWords) {
-                goalWords.textContent = sessionGoal.targetWords ? sessionGoal.targetWords.toLocaleString() : 'Unlimited';
-            }
-
-            if (goalTime) {
-                if (sessionGoal.timeLimit) {
-                    const remaining = sessionGoal.timeLimit - (Date.now() - sessionGoal.startTime);
-                    const min = Math.max(0, Math.floor(remaining / 60000));
-                    goalTime.textContent = min + ' min remaining';
-                    goalTime.style.color = min < 5 ? '#F44336' : '';
-                } else {
-                    goalTime.textContent = 'Unlimited';
-                }
-            }
-
-            // Calculate progress
-            let progress = 0;
-            if (sessionGoal.targetWords && sessionGoal.totalWordsRead > 0) {
-                progress = Math.min(100, (sessionGoal.totalWordsRead / sessionGoal.targetWords) * 100);
-            }
-            if (goalProgress) goalProgress.textContent = progress.toFixed(0) + '%';
-            if (goalBar) goalBar.style.width = progress + '%';
-        }
-
-        // Hook into the demo simulation to track goals
-        const origUpdateUI = updateUI;
-        updateUI = function() {
-            origUpdateUI();
-
-            // Update goal tracking
-            if (sessionGoal.active && isDemoRunning && FocusFlow.cognition) {
-                const state = FocusFlow.cognition.getState();
-                if (state.name === 'Normal') {
-                    sessionGoal.totalReadingTime += 200; // ms per tick
-                    sessionGoal.totalWordsRead += 3; // approximate words read per tick
-                }
-                if (state.name === 'Distracted') {
-                    sessionGoal.distractions++;
-                }
-
-                // Check time limit
-                if (sessionGoal.timeLimit && (Date.now() - sessionGoal.startTime) >= sessionGoal.timeLimit) {
-                    showSessionSummary();
-                }
-
-                updateGoalDisplay();
-            }
-        };
-
-        window.showSessionSummary = function() {
-            // Remove any existing dialog
-            const existing = document.querySelector('.ff-dialog-overlay');
-            if (existing) existing.remove();
-
-            const duration = sessionGoal.startTime ? Math.floor((Date.now() - sessionGoal.startTime) / 1000) : 0;
-            const durationMin = Math.floor(duration / 60);
-            const durationSec = duration % 60;
-
-            // Build insight text
-            let insightHTML = '';
-            if (sessionGoal.active && sessionGoal.targetWords && sessionGoal.totalWordsRead > 0) {
-                const percent = Math.min(100, Math.round((sessionGoal.totalWordsRead / sessionGoal.targetWords) * 100));
-                insightHTML += `<p>📖 Goal completion: <strong>${percent}%</strong></p>`;
-            }
-            if (sessionGoal.distractions > 5) {
-                insightHTML += `<p>⚠️ Frequent distractions (${sessionGoal.distractions} times). Consider enabling <strong>Deep Focus Mode</strong> and setting a countdown timer to reduce interruptions.</p>`;
-            } else if (sessionGoal.distractions > 0) {
-                insightHTML += `<p>✅ Good focus, with only ${sessionGoal.distractions} brief distractions.</p>`;
-            } else {
-                insightHTML += `<p>🌟 Excellent performance. This reading session stayed highly focused.</p>`;
-            }
-            if (duration > 1800) {
-                insightHTML += `<p>🕐 You have read for over 30 minutes. Take a 5-10 minute break to protect your eyes.</p>`;
-            }
-
-            const overlay = document.createElement('div');
-            overlay.className = 'ff-dialog-overlay';
-            overlay.innerHTML = `
-                <div class="ff-dialog">
-                    <div class="ff-dialog-header">
-                        <h3>📊 Session Summary</h3>
-                        <button class="ff-dialog-close" onclick="this.closest('.ff-dialog-overlay').remove()">&times;</button>
-                    </div>
-                    <div class="ff-dialog-body">
-                        <div class="ff-summary-stats">
-                            <div class="ff-summary-stat">
-                                <div class="ff-summary-value">${durationMin}:${String(durationSec).padStart(2,'0')}</div>
-                                <div class="ff-summary-label">⏱️ Reading Time</div>
-                            </div>
-                            <div class="ff-summary-stat">
-                                <div class="ff-summary-value">${sessionGoal.totalWordsRead.toLocaleString()}</div>
-                                <div class="ff-summary-label">📖 Words Read</div>
-                            </div>
-                            <div class="ff-summary-stat">
-                                <div class="ff-summary-value">${sessionGoal.distractions}</div>
-                                <div class="ff-summary-label">🚫 Distractions</div>
-                            </div>
-                            <div class="ff-summary-stat">
-                                <div class="ff-summary-value">${duration > 0 ? Math.round(sessionGoal.totalWordsRead / (duration / 60)) : 0}</div>
-                                <div class="ff-summary-label">⚡ Avg WPM</div>
-                            </div>
-                        </div>
-                        <div class="ff-summary-insight">
-                            ${insightHTML || '<p>No insight data yet.</p>'}
-                        </div>
-                    </div>
-                    <div class="ff-dialog-footer">
-                        <button class="ff-btn ff-btn-secondary" onclick="this.closest('.ff-dialog-overlay').remove()">Close</button>
-                        <button class="ff-btn ff-btn-primary" onclick="endSession()">🔄 End and Reset</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-
-            overlay.addEventListener('click', function(e) {
-                if (e.target === overlay) overlay.remove();
-            });
-
-            log('📊', 'Session summary generated');
-        };
-
-        window.endSession = function() {
-            document.querySelector('.ff-dialog-overlay')?.remove();
-            sessionGoal.active = false;
-            sessionGoal.targetWords = null;
-            sessionGoal.timeLimit = null;
-            sessionGoal.startTime = null;
-            sessionGoal.totalWordsRead = 0;
-            sessionGoal.distractions = 0;
-            sessionGoal.totalReadingTime = 0;
-            updateGoalDisplay();
-            resetAll();
-            log('✅', 'Session ended and reset');
-        };
-
-        // Add periodic goal display update
-        setInterval(updateGoalDisplay, 5000);
     </script>
 
     <!-- Comprehension assist card (fixed, anchored to active paragraph) -->

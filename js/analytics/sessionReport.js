@@ -35,7 +35,8 @@ const SessionReport = {
                     </section>
                     <section class="ff-report-section">
                         <h4>${t('report.timelineTitle')}</h4>
-                        <div class="ff-report-timeline">${this._renderTimeline(report.stateTimeline, t)}</div>
+                        <p class="ff-report-hint">${t('report.timelineHint')}</p>
+                        <div class="ff-report-state-share">${this._renderStateDistribution(report.stateDistribution, t)}</div>
                     </section>
                     <section class="ff-report-section">
                         <h4>${t('report.assistTitle')}</h4>
@@ -94,29 +95,66 @@ const SessionReport = {
         }).join('');
     },
 
-    _renderTimeline(stateTimeline, t) {
-        if (!stateTimeline || stateTimeline.length === 0) {
+    _stateColors() {
+        return {
+            Normal: '#4CAF50',
+            Focus: '#4CAF50',
+            Distracted: '#FF9800',
+            Struggling: '#F44336',
+            Idle: '#94a3b8',
+            OffScreen: '#64748b',
+            LowDistraction: '#FF9800',
+            HighDistraction: '#F97316',
+            LowStruggling: '#FF5722',
+            HighStruggling: '#D32F2F'
+        };
+    },
+
+    _renderStateDistribution(stateDistribution, t) {
+        if (!stateDistribution || stateDistribution.length === 0) {
             return `<p class="ff-report-empty">${t('report.noData')}</p>`;
         }
 
-        const colors = {
-            Normal: '#4CAF50',
-            Distracted: '#FF9800',
-            Struggling: '#F44336'
-        };
+        const colors = this._stateColors();
+        const segments = stateDistribution
+            .filter((item) => item.percent > 0)
+            .map((item) => {
+                const stateLabel = (typeof I18n !== 'undefined')
+                    ? I18n.translateState(item.state)
+                    : item.state;
+                const color = colors[item.state] || '#64748b';
+                const seconds = (item.durationMs / 1000).toFixed(1);
+                const width = Math.max(item.percent, item.percent > 0 ? 1.5 : 0);
+                return {
+                    ...item,
+                    stateLabel,
+                    color,
+                    seconds,
+                    width
+                };
+            });
 
-        return stateTimeline.slice(-12).map((item) => {
-            const stateLabel = (typeof I18n !== 'undefined')
-                ? I18n.translateState(item.state)
-                : item.state;
-            return `
-                <div class="ff-report-timeline-row">
-                    <span class="ff-report-timeline-dot" style="background:${colors[item.state] || '#64748b'}"></span>
-                    <span class="ff-report-timeline-state">${stateLabel}</span>
-                    <span class="ff-report-timeline-dur">${(item.durationMs / 1000).toFixed(1)}s</span>
-                </div>
-            `;
-        }).join('');
+        const barHtml = segments.map((item) => `
+            <div class="ff-report-state-segment"
+                 style="width:${item.width}%;background:${item.color};"
+                 title="${item.stateLabel} ${item.percent}%"></div>
+        `).join('');
+
+        const legendHtml = segments.map((item) => `
+            <div class="ff-report-state-legend-row">
+                <span class="ff-report-state-swatch" style="background:${item.color};"></span>
+                <span class="ff-report-state-name">${item.stateLabel}</span>
+                <span class="ff-report-state-percent">${item.percent}%</span>
+                <span class="ff-report-state-duration">${item.seconds}s</span>
+            </div>
+        `).join('');
+
+        return `
+            <div class="ff-report-state-bar" role="img" aria-label="${t('report.timelineTitle')}">
+                ${barHtml}
+            </div>
+            <div class="ff-report-state-legend">${legendHtml}</div>
+        `;
     },
 
     _exportJson(report) {

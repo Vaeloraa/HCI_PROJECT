@@ -1666,18 +1666,11 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
             ? I18n.translateState(displayState)
             : displayState;
     }
-    const descEl = document.getElementById('ff-state-desc');
-    if (descEl) {
-        descEl.textContent = (typeof I18n !== 'undefined')
-            ? I18n.translateStateHint(displayState)
-            : 'Focused reading';
-    }
     if (durEl) {
         durEl.textContent = (state.duration / 1000).toFixed(1);
     }
 
     const strategyNameEl = document.getElementById('ff-strategy-name');
-    const strategyDescEl = document.getElementById('ff-strategy-desc');
     const strategyText = (typeof I18n !== 'undefined')
         ? I18n.translateStrategy(resolved)
         : {
@@ -1685,12 +1678,6 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
             desc: resolved?.description || this._t('strategy.waiting')
         };
     if (strategyNameEl) strategyNameEl.textContent = strategyText.name;
-    if (strategyDescEl) strategyDescEl.textContent = strategyText.desc;
-
-    const badgeEl = document.getElementById('ff-escalation-badge');
-    if (badgeEl) {
-        badgeEl.hidden = true;
-    }
 
     const cardState = document.getElementById('card-state');
     if (cardState && state) {

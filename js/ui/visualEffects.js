@@ -338,8 +338,12 @@ class VisualEffects {
         this.clearKeywordHighlights();
         if (!element || !keywords || !keywords.length) return;
 
-        this._keywordHighlightEl = element;
-        this._keywordHighlightOriginal = element.innerHTML;
+        const textHost = element.querySelector('.ff-block-original')
+            || element.querySelector('.ff-block-text')
+            || element;
+
+        this._keywordHighlightEl = textHost;
+        this._keywordHighlightOriginal = textHost.innerHTML;
 
         const terms = keywords
             .map((k) => k.word || k.term)
@@ -348,12 +352,9 @@ class VisualEffects {
 
         if (!terms.length) return;
 
-        const textNode = Array.from(element.childNodes).find(
-            (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
-        );
-        if (!textNode) return;
+        const sourceText = textHost.textContent;
+        if (!sourceText.trim()) return;
 
-        const sourceText = textNode.textContent;
         const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
         let html = sourceText;
 
@@ -363,10 +364,7 @@ class VisualEffects {
             html = html.replace(re, '<mark class="ff-kw-highlight">$1</mark>');
         }
 
-        const wrapper = document.createElement('span');
-        wrapper.className = 'ff-block-text';
-        wrapper.innerHTML = html;
-        element.replaceChild(wrapper, textNode);
+        textHost.innerHTML = html;
     }
 
     clearKeywordHighlights() {

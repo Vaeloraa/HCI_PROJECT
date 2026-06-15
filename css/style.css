@@ -629,6 +629,56 @@ mark.ff-kw-highlight,
     display: none !important;
 }
 
+.ff-translate-btn {
+    border-color: rgba(167, 139, 250, 0.4);
+    color: #c4b5fd;
+}
+
+.ff-translate-btn:hover:not(:disabled) {
+    background: rgba(76, 29, 149, 0.45);
+    border-color: rgba(196, 181, 253, 0.55);
+}
+
+.ff-translate-btn--loading {
+    opacity: 0.75;
+    cursor: wait;
+}
+
+.ff-translate-btn--active {
+    border-color: rgba(52, 211, 153, 0.45);
+    color: #6ee7b7;
+}
+
+.ff-block-translation {
+    display: block;
+    margin-top: 0.65em;
+    padding: 0.5em 0.75em;
+    border-left: 3px solid rgba(167, 139, 250, 0.45);
+    color: var(--text-secondary);
+    font-size: 0.95em;
+    line-height: 1.65;
+    background: rgba(167, 139, 250, 0.06);
+    border-radius: 0 6px 6px 0;
+}
+
+.ff-block-translation[hidden] {
+    display: none !important;
+}
+
+.ff-meta-actions {
+    right: 4px;
+}
+
+.ff-translate-all-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    white-space: nowrap;
+}
+
+.ff-translate-all-btn[hidden] {
+    display: none !important;
+}
+
 /* Session report */
 .ff-session-report {
     width: min(720px, 96vw);

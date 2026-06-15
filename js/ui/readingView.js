@@ -104,6 +104,12 @@ class ReadingView {
         this._paragraphDebugEnabled = false;
         this._paragraphDebugLegend = null;
         this._boundSyncParagraphDebug = () => this._syncParagraphDebugOverlays();
+        this._originalBlockTexts = [];
+        this._originalDocument = null;
+        this._translatedBlockTexts = [];
+        this._translatedBlocks = new Set();
+        this._metaTranslations = {};
+        this._allTranslationsVisible = false;
         
         this._loadRawText(DEFAULT_READING_TEXT, 'default');
         this._bindLayoutListeners();
@@ -151,6 +157,353 @@ class ReadingView {
         return this.documentLang || 'en';
     }
 
+    isEnglishDocument() {
+        return this.documentLang === 'en';
+    }
+
+    getOriginalBlockText(blockIndex) {
+        if (this._originalBlockTexts && this._originalBlockTexts[blockIndex]) {
+            return this._originalBlockTexts[blockIndex];
+        }
+        return this.getBlockText(blockIndex);
+    }
+
+    _snapshotOriginals() {
+        this._originalBlockTexts = this._blockTexts.slice();
+        this._originalDocument = JSON.parse(JSON.stringify(this.document || { blocks: [] }));
+        this._translatedBlockTexts = [];
+        this._translatedBlocks = new Set();
+        this._metaTranslations = {};
+        this._allTranslationsVisible = false;
+    }
+
+    _getTranslationSpan(el) {
+        if (!el) return null;
+        return el.querySelector('.ff-block-translation');
+    }
+
+    _ensureOriginalSpan(el, text) {
+        if (!el) return null;
+        let orig = el.querySelector('.ff-block-original');
+        if (!orig) {
+            const existing = (text || el.textContent || '').trim();
+            el.textContent = '';
+            orig = document.createElement('span');
+            orig.className = 'ff-block-text ff-block-original';
+            orig.textContent = existing;
+            el.appendChild(orig);
+        }
+        return orig;
+    }
+
+    _ensureTranslationSpan(el) {
+        if (!el) return null;
+        this._ensureOriginalSpan(el);
+        let trans = this._getTranslationSpan(el);
+        if (!trans) {
+            trans = document.createElement('span');
+            trans.className = 'ff-block-translation';
+            trans.hidden = true;
+            el.appendChild(trans);
+        }
+        return trans;
+    }
+
+    hasBlockTranslation(blockIndex) {
+        return !!(this._translatedBlockTexts && this._translatedBlockTexts[blockIndex]);
+    }
+
+    isBlockTranslationVisible(blockIndex) {
+        const el = this.getBlockElement(blockIndex);
+        const trans = this._getTranslationSpan(el);
+        return !!(trans && !trans.hidden && trans.textContent.trim());
+    }
+
+    hasAnyTranslation() {
+        if (this._translatedBlocks.size > 0) return true;
+        return Object.keys(this._metaTranslations).length > 0;
+    }
+
+    hasMetaTranslation(metaKey) {
+        return !!(this._metaTranslations && this._metaTranslations[metaKey]);
+    }
+
+    getUntranslatedBlockIndices() {
+        const indices = [];
+        for (let i = 0; i < this.blockElements.length; i++) {
+            if (!this.hasBlockTranslation(i)) {
+                indices.push(i);
+            }
+        }
+        return indices;
+    }
+
+    getMissingMetaKeys() {
+        const keys = [];
+        const orig = this._originalDocument;
+        if (!orig) return keys;
+
+        if (orig.title && !this.hasMetaTranslation('title')) keys.push('title');
+        if (orig.subtitle && !this.hasMetaTranslation('subtitle')) keys.push('subtitle');
+
+        const origHeadings = (orig.blocks || []).filter((b) => b.type === 'heading');
+        for (let i = 0; i < origHeadings.length; i++) {
+            if (!this.hasMetaTranslation(`heading-${i}`)) {
+                keys.push(`heading-${i}`);
+            }
+        }
+        return keys;
+    }
+
+    hasAllTranslations() {
+        return this.getUntranslatedBlockIndices().length === 0
+            && this.getMissingMetaKeys().length === 0;
+    }
+
+    areAllTranslationsVisible() {
+        if (!this.hasAnyTranslation()) return false;
+
+        let hasVisible = false;
+        let hasHidden = false;
+
+        const check = (trans) => {
+            if (!trans || !trans.textContent.trim()) return;
+            if (trans.hidden) hasHidden = true;
+            else hasVisible = true;
+        };
+
+        this.blockElements.forEach((el) => check(this._getTranslationSpan(el)));
+        if (this.container) {
+            this.container.querySelectorAll('.ff-block-translation').forEach(check);
+        }
+
+        if (!hasVisible && !hasHidden) return false;
+        return hasVisible && !hasHidden;
+    }
+
+    setTranslateActionsVisible(visible) {
+        const show = !!visible;
+        this.container.querySelectorAll('.ff-translate-btn').forEach((btn) => {
+            btn.hidden = !show;
+        });
+    }
+
+    applyBlockTranslation(blockIndex, text, visible = true) {
+        const el = this.getBlockElement(blockIndex);
+        if (!el) return;
+
+        const transSpan = this._ensureTranslationSpan(el);
+        transSpan.textContent = text;
+        transSpan.hidden = !visible;
+
+        this._translatedBlockTexts[blockIndex] = text;
+        this._translatedBlocks.add(blockIndex);
+        if (visible) {
+            this._allTranslationsVisible = true;
+        }
+    }
+
+    applyMetaTranslation(metaKey, translated, visible = true) {
+        if (!this.container || !translated) return;
+
+        let el = null;
+        if (metaKey === 'title') {
+            el = this.container.querySelector('.reading-title');
+        } else if (metaKey === 'subtitle') {
+            el = this.container.querySelector('.reading-subtitle');
+        } else if (metaKey.startsWith('heading-')) {
+            const index = parseInt(metaKey.split('-')[1], 10);
+            const headings = this.container.querySelectorAll('.section-heading');
+            el = headings[index] || null;
+        }
+
+        if (!el) return;
+
+        const transSpan = this._ensureTranslationSpan(el);
+        transSpan.textContent = translated;
+        transSpan.hidden = !visible;
+        this._metaTranslations[metaKey] = translated;
+        if (visible) {
+            this._allTranslationsVisible = true;
+        }
+    }
+
+    toggleBlockTranslation(blockIndex) {
+        const el = this.getBlockElement(blockIndex);
+        const trans = this._getTranslationSpan(el);
+        if (!trans || !trans.textContent.trim()) return false;
+
+        trans.hidden = !trans.hidden;
+        return !trans.hidden;
+    }
+
+    getMetaElement(metaKey) {
+        if (!this.container || !metaKey) return null;
+        if (metaKey === 'title') {
+            return this.container.querySelector('.reading-title');
+        }
+        if (metaKey === 'subtitle') {
+            return this.container.querySelector('.reading-subtitle');
+        }
+        if (metaKey.startsWith('heading-')) {
+            const index = parseInt(metaKey.split('-')[1], 10);
+            const headings = this.container.querySelectorAll('.section-heading');
+            return headings[index] || null;
+        }
+        return null;
+    }
+
+    getOriginalMetaText(metaKey) {
+        const orig = this._originalDocument;
+        if (!orig) return '';
+
+        if (metaKey === 'title') return orig.title || '';
+        if (metaKey === 'subtitle') return orig.subtitle || '';
+        if (metaKey.startsWith('heading-')) {
+            const index = parseInt(metaKey.split('-')[1], 10);
+            const headings = (orig.blocks || []).filter((b) => b.type === 'heading');
+            return headings[index] ? headings[index].text : '';
+        }
+        return '';
+    }
+
+    isMetaTranslationVisible(metaKey) {
+        const el = this.getMetaElement(metaKey);
+        const trans = this._getTranslationSpan(el);
+        return !!(trans && !trans.hidden && trans.textContent.trim());
+    }
+
+    toggleMetaTranslation(metaKey) {
+        const el = this.getMetaElement(metaKey);
+        const trans = this._getTranslationSpan(el);
+        if (!trans || !trans.textContent.trim()) return false;
+
+        trans.hidden = !trans.hidden;
+        return !trans.hidden;
+    }
+
+    _updateTranslateBtnElement(btn, state) {
+        if (!btn) return;
+
+        if (state === 'hidden') {
+            btn.hidden = true;
+            return;
+        }
+
+        btn.hidden = false;
+        btn.disabled = state === 'loading';
+        btn.classList.toggle('ff-translate-btn--loading', state === 'loading');
+        btn.classList.toggle('ff-translate-btn--active', state === 'hide' || state === 'show');
+
+        let key = 'comprehension.translateAi';
+        if (state === 'loading') key = 'comprehension.translating';
+        else if (state === 'hide') key = 'comprehension.hideTranslation';
+        else if (state === 'show') key = 'comprehension.showTranslation';
+
+        btn.dataset.i18n = key;
+        btn.textContent = (typeof I18n !== 'undefined') ? I18n.t(key) : key;
+    }
+
+    _createTranslateButton(targetKey, isMeta = false) {
+        const translateBtn = document.createElement('button');
+        translateBtn.type = 'button';
+        translateBtn.className = 'ff-comprehension-btn ff-translate-btn';
+        translateBtn.dataset.i18n = 'comprehension.translateAi';
+        translateBtn.textContent = (typeof I18n !== 'undefined') ? I18n.t('comprehension.translateAi') : 'AI Translate';
+        translateBtn.hidden = true;
+
+        if (isMeta) {
+            translateBtn.dataset.metaKey = targetKey;
+            translateBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (typeof FocusFlow !== 'undefined' && FocusFlow.handleTranslateMeta) {
+                    FocusFlow.handleTranslateMeta(targetKey);
+                }
+            });
+        } else {
+            translateBtn.dataset.blockIndex = String(targetKey);
+            translateBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (typeof FocusFlow !== 'undefined' && FocusFlow.handleTranslateBlock) {
+                    FocusFlow.handleTranslateBlock(targetKey);
+                }
+            });
+        }
+
+        return translateBtn;
+    }
+
+    _buildMetaContent(el, text, metaKey) {
+        el.dataset.metaKey = metaKey;
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'ff-block-text ff-block-original';
+        textSpan.textContent = text;
+        el.appendChild(textSpan);
+
+        const transSpan = document.createElement('span');
+        transSpan.className = 'ff-block-translation';
+        transSpan.hidden = true;
+        el.appendChild(transSpan);
+
+        if (this.documentLang === 'en') {
+            const actions = document.createElement('div');
+            actions.className = 'ff-comprehension-actions ff-meta-actions';
+            actions.appendChild(this._createTranslateButton(metaKey, true));
+            el.appendChild(actions);
+        }
+    }
+
+    setAllTranslationsVisible(visible) {
+        this._allTranslationsVisible = !!visible;
+
+        this.blockElements.forEach((el, index) => {
+            const trans = this._getTranslationSpan(el);
+            if (trans && trans.textContent.trim()) {
+                trans.hidden = !visible;
+                this.updateTranslateButton(index, visible ? 'hide' : 'show');
+            }
+        });
+
+        if (this.container) {
+            this.container.querySelectorAll('.ff-block-translation').forEach((trans) => {
+                if (trans.textContent.trim()) {
+                    trans.hidden = !visible;
+                }
+            });
+
+            this.container.querySelectorAll('.ff-meta-actions .ff-translate-btn').forEach((btn) => {
+                const metaKey = btn.dataset.metaKey;
+                if (!metaKey || !this.hasMetaTranslation(metaKey)) return;
+                this.updateMetaTranslateButton(metaKey, visible ? 'hide' : 'show');
+            });
+        }
+    }
+
+    markDocumentHasTranslations() {
+        this._allTranslationsVisible = true;
+        this.blockElements.forEach((_, index) => {
+            if (this.hasBlockTranslation(index)) {
+                this.updateTranslateButton(index, 'hide');
+            }
+        });
+        Object.keys(this._metaTranslations).forEach((metaKey) => {
+            this.updateMetaTranslateButton(metaKey, 'hide');
+        });
+    }
+
+    updateTranslateButton(blockIndex, state) {
+        const el = this.getBlockElement(blockIndex);
+        if (!el) return;
+        this._updateTranslateBtnElement(el.querySelector('.ff-translate-btn'), state);
+    }
+
+    updateMetaTranslateButton(metaKey, state) {
+        const el = this.getMetaElement(metaKey);
+        if (!el) return;
+        this._updateTranslateBtnElement(el.querySelector('.ff-translate-btn'), state);
+    }
+
     /**
      * Build the reading content DOM structure with block-level paragraph elements.
      * Each paragraph gets a data-block-id for gaze-to-paragraph mapping.
@@ -164,28 +517,29 @@ class ReadingView {
         this.blockRects = [];
         this._blockTexts = [];
         let blockCounter = 0;
+        let headingIndex = 0;
         let paragraphNumber = 1;
         const doc = this.document || { title: null, subtitle: null, blocks: [] };
 
         if (doc.title) {
             const titleEl = document.createElement('h1');
             titleEl.className = 'reading-title ff-block';
-            titleEl.textContent = doc.title;
             titleEl.dataset.blockId = 'title';
             titleEl.dataset.splitType = 'title';
             titleEl.dataset.charCount = String(doc.title.length);
             titleEl.style.position = 'relative';
+            this._buildMetaContent(titleEl, doc.title, 'title');
             this.container.appendChild(titleEl);
         }
 
         if (doc.subtitle) {
             const subtitleEl = document.createElement('p');
             subtitleEl.className = 'reading-subtitle ff-block';
-            subtitleEl.textContent = doc.subtitle;
             subtitleEl.dataset.blockId = 'subtitle';
             subtitleEl.dataset.splitType = 'subtitle';
             subtitleEl.dataset.charCount = String(doc.subtitle.length);
             subtitleEl.style.position = 'relative';
+            this._buildMetaContent(subtitleEl, doc.subtitle, 'subtitle');
             this.container.appendChild(subtitleEl);
         }
 
@@ -193,12 +547,14 @@ class ReadingView {
             if (block.type === 'heading') {
                 const headingEl = document.createElement('h2');
                 headingEl.className = 'section-heading ff-block';
-                headingEl.textContent = block.text;
+                const metaKey = `heading-${headingIndex}`;
                 headingEl.dataset.blockId = `heading-${blockCounter}`;
                 headingEl.dataset.splitType = 'heading';
                 headingEl.dataset.charCount = String(block.text.length);
                 headingEl.style.position = 'relative';
+                this._buildMetaContent(headingEl, block.text, metaKey);
                 this.container.appendChild(headingEl);
+                headingIndex++;
                 blockCounter++;
                 continue;
             }
@@ -207,13 +563,22 @@ class ReadingView {
 
             const el = document.createElement('p');
             el.className = 'content-paragraph ff-block';
-            el.textContent = block.text;
             el.dataset.blockId = `block-${blockCounter}`;
             el.dataset.splitType = 'paragraph';
             el.dataset.trackIndex = String(this.blockElements.length);
             el.dataset.charCount = String(block.text.length);
             el.dataset.wordCount = String(this._countWords(block.text));
             el.style.position = 'relative';
+
+            const textSpan = document.createElement('span');
+            textSpan.className = 'ff-block-text ff-block-original';
+            textSpan.textContent = block.text;
+            el.appendChild(textSpan);
+
+            const transSpan = document.createElement('span');
+            transSpan.className = 'ff-block-translation';
+            transSpan.hidden = true;
+            el.appendChild(transSpan);
 
             const actions = document.createElement('div');
             actions.className = 'ff-comprehension-actions';
@@ -235,8 +600,12 @@ class ReadingView {
                     FocusFlow.requestComprehensionForBlock(trackIndex, { manual: true });
                 }
             });
-
             actions.appendChild(summaryBtn);
+
+            if (this.documentLang === 'en') {
+                actions.appendChild(this._createTranslateButton(trackIndex, false));
+            }
+
             el.appendChild(actions);
 
             const numEl = document.createElement('span');
@@ -254,6 +623,8 @@ class ReadingView {
         if (this._paragraphDebugEnabled) {
             this._syncParagraphDebugOverlays();
         }
+
+        this._snapshotOriginals();
     }
 
     getBlockElement(blockIndex) {

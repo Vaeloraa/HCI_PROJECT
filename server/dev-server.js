@@ -103,6 +103,52 @@ async function callLLM(text, lang) {
     return (content || '').trim();
 }
 
+function buildTranslatePrompt(text) {
+    return {
+        system: '你是专业英中翻译助手。将用户给出的英文内容完整、准确地翻译为流畅的简体中文。只输出译文，不要解释，不要保留英文原文，不要使用列表除非原文就是列表。',
+        user: text.slice(0, 6000)
+    };
+}
+
+async function callTranslateLLM(text) {
+    if (!API_KEY) {
+        const err = new Error('LLM API key not configured on server');
+        err.code = 'NO_API_KEY';
+        throw err;
+    }
+
+    const { system, user } = buildTranslatePrompt(text);
+    const response = await fetch(`${API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify({
+            model: MODEL,
+            temperature: 0.2,
+            max_tokens: 2800,
+            messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: user }
+            ]
+        })
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        const err = new Error(`LLM HTTP ${response.status}: ${detail.slice(0, 200)}`);
+        err.code = 'LLM_HTTP_ERROR';
+        throw err;
+    }
+
+    const data = await response.json();
+    const content = data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : '';
+    return (content || '').trim();
+}
+
 function sendJson(res, status, payload) {
     res.writeHead(status, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -185,6 +231,35 @@ const server = http.createServer(async (req, res) => {
             sendJson(res, 200, {
                 text: summary,
                 lang,
+                method: 'llm',
+                model: MODEL
+            });
+        } catch (err) {
+            sendJson(res, err.code === 'NO_API_KEY' ? 503 : 502, {
+                error: err.code || 'LLM_ERROR',
+                message: err.message
+            });
+        }
+        return;
+    }
+
+    if (pathname === '/api/translate' && req.method === 'POST') {
+        try {
+            const raw = await readBody(req);
+            const body = JSON.parse(raw || '{}');
+            const text = (body.text || '').trim();
+            const targetLang = body.targetLang === 'zh' ? 'zh' : 'zh';
+
+            if (!text) {
+                sendJson(res, 400, { error: 'empty_text' });
+                return;
+            }
+
+            const translated = await callTranslateLLM(text);
+            sendJson(res, 200, {
+                text: translated,
+                sourceLang: 'en',
+                targetLang,
                 method: 'llm',
                 model: MODEL
             });

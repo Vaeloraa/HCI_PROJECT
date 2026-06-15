@@ -66,8 +66,10 @@ FocusFlow.config = {
     // Member C config — comprehension assist fires on Struggling state
     summaryMaxSentences: 2,
     llmApiUrl: '/api/summarize',
+    llmTranslateUrl: '/api/translate',
     llmStatusUrl: '/api/llm/status',
     llmConcurrency: 3,
+    llmTranslateConcurrency: 2,
 };
 
 // Gaze dot element reference
@@ -122,6 +124,9 @@ FocusFlow._lastPipelineRunTs = 0;
 FocusFlow._pipelineIntervalMs = 100; // ~10 FPS — leave CPU for WebGazer face mesh
 FocusFlow._calibrationLastGaze = null;
 FocusFlow._summaryGenerationInProgress = new Set();
+FocusFlow._translationInProgress = new Set();
+FocusFlow._metaTranslationInProgress = new Set();
+FocusFlow._documentTranslationInProgress = false;
 FocusFlow._allBlockTexts = [];
 FocusFlow._simulationActive = false;
 FocusFlow._initialized = false;
@@ -186,9 +191,25 @@ FocusFlow.init = async function() {
     this.config.llmEnabled = this.llmSummaryManager.isEnabled();
     console.log('[FocusFlow] ✅ Member C - LLM Summary', this.config.llmEnabled ? 'enabled' : 'fallback mode');
 
+    // 9b. Initialize Member C: LLM translate manager
+    this.llmTranslateManager = new LLMTranslateManager(this.config);
+    await this.llmTranslateManager.init();
+    this.config.llmTranslateEnabled = this.llmTranslateManager.isEnabled();
+    console.log('[FocusFlow] ✅ Member C - LLM Translate', this.config.llmTranslateEnabled ? 'enabled' : 'unavailable');
+
     // 10. Initialize the reading content with all block word counts
     this._initBlockWordCounts();
     this._precomputeParagraphSummaries();
+    this._syncTranslateUI();
+
+    const readingContent = document.getElementById('ff-reading-content');
+    if (readingContent) {
+        readingContent.addEventListener('content-loaded', () => {
+            this._initBlockWordCounts();
+            this._precomputeParagraphSummaries();
+            this._syncTranslateUI();
+        });
+    }
 
     document.addEventListener('focusflow-state-change', (event) => {
         const detail = event.detail || {};
@@ -946,6 +967,10 @@ FocusFlow.runCognitionTick = function() {
     const state = this.cognition.getState();
     this._currentStateName = state.name;
 
+    if (this.analytics && typeof this.analytics.tickActivity === 'function') {
+        this.analytics.tickActivity(state.name);
+    }
+
     // Gaze mode: full pipeline runs in onGazeData — only refresh state duration here.
     if (this.config.trackingMode === 'gaze' && this.config.useWebGazer && !this.config.demoMode) {
         return;
@@ -1087,13 +1112,6 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
         };
         this.analytics.recordGazeSample(gazeData, currentState.name);
         this._lastAnalyticsTs = now;
-    }
-    
-    // Track distraction episodes
-    if (currentState.name === 'Distracted') {
-        this.analytics.startDistraction(currentState.name);
-    } else {
-        this.analytics.endDistraction();
     }
     
     // ============================================
@@ -1365,6 +1383,229 @@ FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwell
             this._summaryGenerationInProgress.delete(blockIndex);
         }
     }, 0);
+};
+
+FocusFlow._syncTranslateUI = function() {
+    const rv = this.readingView;
+    const enabled = !!(this.config && this.config.llmTranslateEnabled && this.llmTranslateManager && this.llmTranslateManager.isEnabled());
+    const show = enabled && rv && typeof rv.isEnglishDocument === 'function' && rv.isEnglishDocument();
+
+    if (rv && typeof rv.setTranslateActionsVisible === 'function') {
+        rv.setTranslateActionsVisible(show);
+    }
+
+    const btn = document.getElementById('btn-translate-all');
+    if (btn) {
+        btn.hidden = !show || this._documentTranslationInProgress;
+        if (show && !this._documentTranslationInProgress) {
+            this._syncTranslateAllButton();
+        }
+    }
+};
+
+FocusFlow._syncTranslateAllButton = function() {
+    const btn = document.getElementById('btn-translate-all');
+    const rv = this.readingView;
+    if (!btn || !rv) return;
+
+    let key = 'reading.translateAll';
+    if (typeof rv.hasAnyTranslation === 'function' && rv.hasAnyTranslation()) {
+        if (typeof rv.hasAllTranslations === 'function'
+            && rv.hasAllTranslations()
+            && rv.areAllTranslationsVisible()) {
+            key = 'reading.hideAllTranslations';
+        } else {
+            key = 'reading.showAllTranslations';
+        }
+    }
+
+    btn.dataset.i18n = key;
+    btn.textContent = this._t(key);
+};
+
+FocusFlow._applyBlockTranslation = function(blockIndex, translated, options = {}) {
+    const visible = options.visible !== false;
+    if (!this.readingView || blockIndex < 0) return;
+    this.readingView.applyBlockTranslation(blockIndex, translated, visible);
+};
+
+FocusFlow.handleTranslateBlock = async function(blockIndex) {
+    if (blockIndex < 0 || !this.readingView || !this.readingView.isEnglishDocument()) return;
+
+    if (this.readingView.hasBlockTranslation(blockIndex)) {
+        const visible = this.readingView.toggleBlockTranslation(blockIndex);
+        this.readingView.updateTranslateButton(blockIndex, visible ? 'hide' : 'show');
+        this._syncTranslateAllButton();
+        return;
+    }
+
+    await this.translateBlock(blockIndex);
+};
+
+FocusFlow.handleTranslateMeta = async function(metaKey) {
+    if (!metaKey || !this.readingView || !this.readingView.isEnglishDocument()) return;
+
+    if (this.readingView.hasMetaTranslation(metaKey)) {
+        const visible = this.readingView.toggleMetaTranslation(metaKey);
+        this.readingView.updateMetaTranslateButton(metaKey, visible ? 'hide' : 'show');
+        this._syncTranslateAllButton();
+        return;
+    }
+
+    await this.translateMeta(metaKey);
+};
+
+FocusFlow.translateMeta = async function(metaKey) {
+    if (!metaKey || !this.llmTranslateManager || !this.llmTranslateManager.isEnabled()) return;
+    if (!this.readingView || !this.readingView.isEnglishDocument()) return;
+    if (this._metaTranslationInProgress.has(metaKey)) return;
+
+    const original = this.readingView.getOriginalMetaText(metaKey);
+    if (!original || !original.trim()) return;
+
+    this._metaTranslationInProgress.add(metaKey);
+    this.readingView.updateMetaTranslateButton(metaKey, 'loading');
+
+    try {
+        const translated = await this.llmTranslateManager.translate(original);
+        this.readingView.applyMetaTranslation(metaKey, translated, true);
+        this.readingView.updateMetaTranslateButton(metaKey, 'hide');
+        this._syncTranslateAllButton();
+    } catch (err) {
+        console.warn('[FocusFlow] Meta translation failed:', err);
+        this.readingView.updateMetaTranslateButton(metaKey, 'idle');
+        if (this.visualEffects) {
+            this.visualEffects.showPrompt('⚠️', this._t('reading.translateError'), err.message || '');
+        }
+    } finally {
+        this._metaTranslationInProgress.delete(metaKey);
+    }
+};
+
+FocusFlow.translateBlock = async function(blockIndex) {
+    if (blockIndex < 0 || !this.llmTranslateManager || !this.llmTranslateManager.isEnabled()) return;
+    if (!this.readingView || !this.readingView.isEnglishDocument()) return;
+    if (this._translationInProgress.has(blockIndex)) return;
+
+    const original = this.readingView.getOriginalBlockText(blockIndex);
+    if (!original || !original.trim()) return;
+
+    this._translationInProgress.add(blockIndex);
+    this.readingView.updateTranslateButton(blockIndex, 'loading');
+
+    try {
+        const translated = await this.llmTranslateManager.translate(original);
+        this._applyBlockTranslation(blockIndex, translated, { visible: true });
+        this.readingView.updateTranslateButton(blockIndex, 'hide');
+        this._syncTranslateAllButton();
+    } catch (err) {
+        console.warn('[FocusFlow] Block translation failed:', err);
+        this.readingView.updateTranslateButton(blockIndex, 'idle');
+        if (this.visualEffects) {
+            this.visualEffects.showPrompt('⚠️', this._t('reading.translateError'), err.message || '');
+        }
+    } finally {
+        this._translationInProgress.delete(blockIndex);
+    }
+};
+
+FocusFlow._translateDocumentMeta = async function(options = {}) {
+    const rv = this.readingView;
+    const onlyMissing = !!options.onlyMissing;
+    const visible = options.visible !== false;
+    if (!rv || !rv.container || !rv._originalDocument) return;
+
+    const orig = rv._originalDocument;
+
+    if (orig.title && (!onlyMissing || !rv.hasMetaTranslation('title'))) {
+        const translated = await this.llmTranslateManager.translate(orig.title);
+        rv.applyMetaTranslation('title', translated, visible);
+        rv.updateMetaTranslateButton('title', visible ? 'hide' : 'show');
+    }
+
+    if (orig.subtitle && (!onlyMissing || !rv.hasMetaTranslation('subtitle'))) {
+        const translated = await this.llmTranslateManager.translate(orig.subtitle);
+        rv.applyMetaTranslation('subtitle', translated, visible);
+        rv.updateMetaTranslateButton('subtitle', visible ? 'hide' : 'show');
+    }
+
+    const origHeadings = (orig.blocks || []).filter((b) => b.type === 'heading');
+    for (let i = 0; i < origHeadings.length; i++) {
+        const metaKey = `heading-${i}`;
+        if (onlyMissing && rv.hasMetaTranslation(metaKey)) continue;
+        const translated = await this.llmTranslateManager.translate(origHeadings[i].text);
+        rv.applyMetaTranslation(metaKey, translated, visible);
+        rv.updateMetaTranslateButton(metaKey, visible ? 'hide' : 'show');
+    }
+};
+
+FocusFlow._updateTranslateAllProgress = function(current, total) {
+    const btn = document.getElementById('btn-translate-all');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = this._t('reading.translateAllProgress', { current, total });
+};
+
+FocusFlow.translateEntireDocument = async function() {
+    if (!this.llmTranslateManager || !this.llmTranslateManager.isEnabled()) return;
+    if (!this.readingView || !this.readingView.isEnglishDocument()) return;
+    if (this._documentTranslationInProgress) return;
+
+    const rv = this.readingView;
+
+    if (rv.hasAnyTranslation() && rv.hasAllTranslations()) {
+        rv.setAllTranslationsVisible(!rv.areAllTranslationsVisible());
+        this._syncTranslateAllButton();
+        return;
+    }
+
+    const blockIndices = rv.getUntranslatedBlockIndices();
+    const missingMeta = rv.getMissingMetaKeys();
+    if (!blockIndices.length && !missingMeta.length) {
+        rv.setAllTranslationsVisible(true);
+        this._syncTranslateAllButton();
+        return;
+    }
+
+    const total = blockIndices.length;
+    this._documentTranslationInProgress = true;
+    this._syncTranslateUI();
+    this._updateTranslateAllProgress(0, Math.max(total, 1));
+
+    try {
+        await this._translateDocumentMeta({
+            onlyMissing: rv.hasAnyTranslation(),
+            visible: true
+        });
+
+        let done = 0;
+        for (const index of blockIndices) {
+            const original = rv.getOriginalBlockText(index);
+            const translated = await this.llmTranslateManager.translate(original);
+            this._applyBlockTranslation(index, translated, { visible: true });
+            rv.updateTranslateButton(index, 'hide');
+            done++;
+            this._updateTranslateAllProgress(done, Math.max(total, 1));
+        }
+
+        rv.setAllTranslationsVisible(true);
+        rv.markDocumentHasTranslations();
+        this._syncTranslateAllButton();
+
+        if (this.visualEffects) {
+            this.visualEffects.showPrompt('🌐', this._t('reading.translateDone'), '');
+        }
+    } catch (err) {
+        console.warn('[FocusFlow] Document translation failed:', err);
+        if (this.visualEffects) {
+            this.visualEffects.showPrompt('⚠️', this._t('reading.translateError'), err.message || '');
+        }
+    } finally {
+        this._documentTranslationInProgress = false;
+        this._syncTranslateUI();
+        const btn = document.getElementById('btn-translate-all');
+        if (btn) btn.disabled = false;
+    }
 };
 
 /**

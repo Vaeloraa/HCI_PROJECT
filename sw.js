@@ -2,7 +2,7 @@
  * FocusFlow Service Worker - PWA Offline Support
  * Caches all local assets for offline use
  */
-const CACHE_NAME = 'focusflow-v53';
+const CACHE_NAME = 'focusflow-v59';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -31,6 +31,7 @@ const STATIC_ASSETS = [
   '/js/ui/debugPanel.js',
   '/js/nlp/keywordExtractor.js',
   '/js/nlp/llmSummaryManager.js',
+  '/js/nlp/llmTranslateManager.js',
   '/js/nlp/paragraphSummarizer.js',
   '/js/analytics/attentionAnalytics.js',
   '/js/analytics/sessionReport.js',

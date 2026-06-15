@@ -55,6 +55,7 @@ class AttentionAnalytics {
         
         // Sample timing for reading-time accumulation
         this._lastSampleTime = Date.now();
+        this._lastActivityTickTime = Date.now();
         this._maxReadingSpeedSamples = 100;
         this._minBlockDwellForSpeedMs = 2500;
         this._lastReadingSpeed = 0;
@@ -80,14 +81,6 @@ class AttentionAnalytics {
      */
     recordGazeSample(gazeData, state) {
         const timestamp = Date.now();
-
-        // Accumulate reading time between gaze samples
-        if (this._lastSampleTime) {
-            const deltaMs = timestamp - this._lastSampleTime;
-            if (deltaMs > 0 && deltaMs < 5000 && this._isReadingState(state)) {
-                this.totalReadingTime += deltaMs;
-            }
-        }
         this._lastSampleTime = timestamp;
         
         // Track gaze path
@@ -165,6 +158,31 @@ class AttentionAnalytics {
     }
 
     /**
+     * Accumulate reading / distraction time from the live cognitive state (~200ms tick).
+     */
+    tickActivity(state) {
+        const now = Date.now();
+
+        if (this._lastActivityTickTime) {
+            const deltaMs = now - this._lastActivityTickTime;
+            if (deltaMs > 0 && deltaMs < 10000) {
+                if (this._isReadingState(state)) {
+                    this.totalReadingTime += deltaMs;
+                } else if (state === 'Distracted') {
+                    this.totalDistractionTime += deltaMs;
+                }
+            }
+        }
+        this._lastActivityTickTime = now;
+
+        if (state === 'Distracted') {
+            this.startDistraction(state);
+        } else {
+            this.endDistraction();
+        }
+    }
+
+    /**
      * Record a distraction episode
      * @param {string} type - Type of distraction (gazeAversion, offScreen, wandering)
      */
@@ -181,7 +199,6 @@ class AttentionAnalytics {
     endDistraction() {
         if (this.currentDistractionStart !== null) {
             const duration = Date.now() - this.currentDistractionStart;
-            this.totalDistractionTime += duration;
             this.distractionEpisodes.push({
                 start: this.currentDistractionStart,
                 duration
@@ -520,6 +537,7 @@ class AttentionAnalytics {
         this.blockEntryTime = {};
         this._lastGazeBlockIndex = -1;
         this._lastGazeSampleTime = null;
+        this._lastActivityTickTime = Date.now();
         this.recoveryEpisodes = [];
         this._pendingDistractionStart = null;
         this.stateTimeline = [];

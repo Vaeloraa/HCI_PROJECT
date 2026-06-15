@@ -92,6 +92,7 @@
         <section class="ff-reading-panel" id="ff-reading-panel">
             <div class="ff-reading-header">
                 <h2 data-i18n="reading.area">📖 Reading Area</h2>
+                <button type="button" id="btn-translate-all" class="ff-btn ff-btn-secondary ff-translate-all-btn" hidden data-i18n="reading.translateAll" onclick="if (typeof FocusFlow !== 'undefined' && FocusFlow.translateEntireDocument) FocusFlow.translateEntireDocument()">Translate All (AI)</button>
             </div>
             
             <!-- The reading content rendered by ReadingView -->
@@ -281,6 +282,7 @@
     <!-- 5. NLP & Analytics (Member C) -->
     <script src="js/nlp/keywordExtractor.js"></script>
     <script src="js/nlp/llmSummaryManager.js?v=2.6.0"></script>
+    <script src="js/nlp/llmTranslateManager.js?v=2.6.0"></script>
     <script src="js/nlp/paragraphSummarizer.js?v=2.6.0"></script>
     <script src="js/analytics/attentionAnalytics.js?v=2.4.0"></script>
     <script src="js/analytics/sessionReport.js?v=2.4.0"></script>
@@ -1630,11 +1632,17 @@
             
             let html = '';
             for (const entry of timelineHistory) {
+                const displayState = (FocusFlow.decision && FocusFlow.decision.interventionStrategy)
+                    ? FocusFlow.decision.interventionStrategy.getDisplayState({ name: entry.state })
+                    : entry.state;
+                const stateLabel = (typeof I18n !== 'undefined')
+                    ? I18n.translateState(displayState)
+                    : entry.state;
                 html += `
                     <div class="ff-timeline-item">
                         <div class="ff-timeline-dot" style="background: ${colors[entry.state] || '#666'}"></div>
                         <div class="ff-timeline-content">
-                            <span class="ff-timeline-state" style="color: ${colors[entry.state] || '#666'}">${entry.state}</span>
+                            <span class="ff-timeline-state" style="color: ${colors[entry.state] || '#666'}">${stateLabel}</span>
                             <span class="ff-timeline-time">${entry.time}</span>
                         </div>
                     </div>
@@ -1922,6 +1930,12 @@
                 if (FocusFlow.llmSummaryManager) {
                     FocusFlow.llmSummaryManager.reset();
                     FocusFlow.llmSummaryManager.preloadDocument(FocusFlow._allBlockTexts, FocusFlow.readingView.getDocumentLang());
+                }
+                if (FocusFlow.llmTranslateManager) {
+                    FocusFlow.llmTranslateManager.reset();
+                }
+                if (FocusFlow._syncTranslateUI) {
+                    FocusFlow._syncTranslateUI();
                 }
                 if (FocusFlow.visualEffects) {
                     FocusFlow.visualEffects.hideComprehensionCard();

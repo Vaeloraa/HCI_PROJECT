@@ -437,10 +437,11 @@ class AttentionAnalytics {
     /**
      * Record when a comprehension assist card was shown.
      */
-    recordComprehensionAssist(blockIndex) {
+    recordComprehensionAssist(blockIndex, trigger = 'manual') {
         this.comprehensionAssists.push({
             blockIndex,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            trigger: trigger === 'struggle' ? 'struggle' : 'manual'
         });
     }
 
@@ -472,16 +473,24 @@ class AttentionAnalytics {
      * Aggregate session time by cognitive state for proportion charts.
      * @returns {{ state: string, durationMs: number, percent: number }[]}
      */
-    getStateTimeDistribution() {
+    getStateTimeDistribution(windowStart, windowEnd) {
+        const start = windowStart || 0;
+        const end = windowEnd || Date.now();
         const totals = {};
 
         for (const item of this.stateTimeline) {
             if (!item || !item.state) continue;
-            totals[item.state] = (totals[item.state] || 0) + (item.durationMs || 0);
+            const itemStart = item.timestamp || 0;
+            const itemEnd = itemStart + (item.durationMs || 0);
+            if (itemEnd <= start || itemStart >= end) continue;
+            const clippedMs = Math.min(itemEnd, end) - Math.max(itemStart, start);
+            if (clippedMs <= 0) continue;
+            totals[item.state] = (totals[item.state] || 0) + clippedMs;
         }
 
-        if (this._lastStateName) {
-            const ongoing = Math.max(0, Date.now() - this._lastStateChangeTime);
+        if (this._lastStateName && this._lastStateChangeTime < end) {
+            const ongoingStart = Math.max(this._lastStateChangeTime, start);
+            const ongoing = Math.max(0, end - ongoingStart);
             totals[this._lastStateName] = (totals[this._lastStateName] || 0) + ongoing;
         }
 
@@ -500,27 +509,62 @@ class AttentionAnalytics {
     /**
      * Full session report for visualization / experiment export.
      */
-    generateSessionReport(readingView) {
-        const summary = this.getSessionSummary();
+    generateSessionReport(readingView, options = {}) {
+        const windowStart = options.startTime ?? this.sessionStart;
+        const windowEnd = options.endTime ?? Date.now();
+        const windowMinutes = Math.max(0, (windowEnd - windowStart) / 60000);
+        const summary = this.getSessionSummary(windowStart, windowEnd);
+
+        const distractionEpisodes = this.distractionEpisodes.filter((ep) => {
+            const epStart = ep.start || 0;
+            return epStart >= windowStart && epStart < windowEnd;
+        });
+        const recoveryEpisodes = this.recoveryEpisodes.filter((ep) => {
+            const epEnd = ep.endedAt || 0;
+            return epEnd > windowStart && epEnd <= windowEnd;
+        });
+        const comprehensionAssists = this.comprehensionAssists.filter((item) => {
+            const ts = item.timestamp || 0;
+            return ts >= windowStart && ts < windowEnd;
+        });
+        const comprehensionAssistManual = comprehensionAssists.filter(
+            (item) => item.trigger !== 'struggle'
+        ).length;
+        const comprehensionAssistStruggle = comprehensionAssists.filter(
+            (item) => item.trigger === 'struggle'
+        ).length;
+        const stateTimeline = this.stateTimeline.filter((item) => {
+            const itemStart = item.timestamp || 0;
+            const itemEnd = itemStart + (item.durationMs || 0);
+            return itemEnd > windowStart && itemStart < windowEnd;
+        });
+
         const totalBlocks = readingView && readingView.blockElements
             ? readingView.blockElements.length
             : Object.keys(this.blockDwellTimes).length;
 
         return {
             generatedAt: new Date().toISOString(),
-            durationMin: Math.round(summary.duration * 10) / 10,
+            sessionStart: windowStart,
+            sessionEnd: windowEnd,
+            durationMin: Math.round(windowMinutes * 10) / 10,
             readingSpeed: summary.readingSpeed,
             focusRatio: summary.focusRatio,
-            distractionCount: summary.distractionCount,
-            avgRecoverySec: this.getAverageRecoverySeconds(),
+            distractionCount: distractionEpisodes.length,
+            avgRecoverySec: recoveryEpisodes.length
+                ? Math.round((recoveryEpisodes.reduce((sum, ep) => sum + (ep.recoveryMs || 0), 0) / recoveryEpisodes.length) / 100) / 10
+                : 0,
             blocksRead: summary.blocksRead,
             regressionRate: summary.regressionRate,
             blockHeatmap: this.getBlockHeatmap(totalBlocks),
-            stateTimeline: this.stateTimeline,
-            stateDistribution: this.getStateTimeDistribution(),
-            comprehensionAssists: this.comprehensionAssists.length,
-            distractionEpisodes: this.distractionEpisodes,
-            recoveryEpisodes: this.recoveryEpisodes,
+            stateTimeline,
+            stateDistribution: this.getStateTimeDistribution(windowStart, windowEnd),
+            comprehensionAssists: comprehensionAssists.length,
+            comprehensionAssistManual,
+            comprehensionAssistStruggle,
+            comprehensionAssistEvents: comprehensionAssists,
+            distractionEpisodes,
+            recoveryEpisodes,
             insight: summary.insight
         };
     }
@@ -529,8 +573,11 @@ class AttentionAnalytics {
      * Get a summary of the current session
      * @returns {Object} Session summary
      */
-    getSessionSummary() {
-        const sessionDuration = Math.round(this.getSessionDuration() * 10) / 10;
+    getSessionSummary(windowStart, windowEnd) {
+        const start = windowStart ?? this.sessionStart;
+        const end = windowEnd ?? Date.now();
+        const sessionDuration = Math.round(Math.max(0, (end - start) / 60000) * 10) / 10;
+        const windowMinutes = Math.max(sessionDuration, 0.01);
         return {
             duration: sessionDuration,
             sessionDuration,
@@ -538,7 +585,7 @@ class AttentionAnalytics {
             focusRatio: Math.round(this.getFocusRatio() * 100),
             distractionCount: this.distractionCount,
             blocksRead: this.blocksRead.size,
-            regressionRate: Math.round(this.getRegressionRate() * 10) / 10,
+            regressionRate: Math.round((this.regressionCount / windowMinutes) * 10) / 10,
             insight: this.getDisplayInsight()
         };
     }

@@ -3,15 +3,27 @@
  * Attention heatmap + reading statistics for end-of-session review.
  */
 const SessionReport = {
-    show(analytics, readingView) {
+    show(analytics, readingView, options = {}) {
         const existing = document.getElementById('ff-session-report-overlay');
         if (existing) existing.remove();
 
-        const report = analytics.generateSessionReport(readingView);
+        const reportOptions = {};
+        if (options.sessionStart) reportOptions.startTime = options.sessionStart;
+        if (options.sessionEnd) reportOptions.endTime = options.sessionEnd;
+
+        const report = analytics.generateSessionReport(readingView, reportOptions);
         const t = (key, params) => {
             if (typeof I18n !== 'undefined') return I18n.t(key, params);
             return key;
         };
+
+        const titleKey = options.titleKey || 'report.title';
+        const rangeHtml = (report.sessionStart && report.sessionEnd)
+            ? `<p class="ff-report-range">${t('report.sessionRange', {
+                start: new Date(report.sessionStart).toLocaleTimeString(),
+                end: new Date(report.sessionEnd).toLocaleTimeString()
+            })}</p>`
+            : '';
 
         const overlay = document.createElement('div');
         overlay.id = 'ff-session-report-overlay';
@@ -19,10 +31,11 @@ const SessionReport = {
         overlay.innerHTML = `
             <div class="ff-dialog ff-session-report">
                 <div class="ff-dialog-header">
-                    <h3>${t('report.title')}</h3>
+                    <h3>${t(titleKey)}</h3>
                     <button class="ff-dialog-close" id="ff-session-report-close">&times;</button>
                 </div>
                 <div class="ff-dialog-body">
+                    ${rangeHtml}
                     <div class="ff-report-stats">
                         ${this._statCard(t('report.duration'), `${report.durationMin} min`)}
                         ${this._statCard(t('report.distractions'), String(report.distractionCount))}
@@ -40,7 +53,8 @@ const SessionReport = {
                     </section>
                     <section class="ff-report-section">
                         <h4>${t('report.assistTitle')}</h4>
-                        <p>${t('report.assistCount', { count: report.comprehensionAssists })}</p>
+                        <p>${t('report.assistManual', { count: report.comprehensionAssistManual || 0 })}</p>
+                        <p>${t('report.assistStruggle', { count: report.comprehensionAssistStruggle || 0 })}</p>
                     </section>
                     ${report.insight ? `<div class="ff-report-insight">${report.insight.icon} ${report.insight.message}</div>` : ''}
                 </div>

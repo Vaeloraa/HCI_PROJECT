@@ -128,6 +128,11 @@ FocusFlow._translationInProgress = new Set();
 FocusFlow._metaTranslationInProgress = new Set();
 FocusFlow._documentTranslationInProgress = false;
 FocusFlow._allBlockTexts = [];
+FocusFlow._deepReadingSession = {
+    active: false,
+    startTime: null,
+    endTime: null
+};
 FocusFlow._simulationActive = false;
 FocusFlow._initialized = false;
 FocusFlow._calibrationDone = false;
@@ -171,6 +176,9 @@ FocusFlow.init = async function() {
 
     // 6. Initialize Member B: Focus Mode Manager
     this.focusMode = new FocusMode();
+    this.focusMode.onChange((mode) => {
+        this._syncDeepReadingControlsUI();
+    });
     console.log('[FocusFlow] ✅ Member B - Focus Mode Manager loaded');
 
 
@@ -246,6 +254,8 @@ FocusFlow.init = async function() {
 
     console.log('[FocusFlow] 🚀 All systems ready!');
     this._removeLegacyKeywordPanels();
+    this._bindDeepReadingControls();
+    this._syncDeepReadingControlsUI();
     this._initialized = true;
 };
 
@@ -1227,7 +1237,10 @@ FocusFlow.requestComprehensionForBlock = function(blockIndex, options = {}) {
     }
 
     if (auto && struggleTrigger && cached) {
-        this._displayComprehensionCard(blockIndex, cached, dwellTime, { recordAnalytics: true });
+        this._displayComprehensionCard(blockIndex, cached, dwellTime, {
+            recordAnalytics: true,
+            trigger: 'struggle'
+        });
         return;
     }
 
@@ -1241,7 +1254,10 @@ FocusFlow.requestComprehensionForBlock = function(blockIndex, options = {}) {
         ? this.readingView.getBlockElement(blockIndex)
         : null;
     const gazeBlock = blockEl ? { element: blockEl } : null;
-    this._generateComprehensionForBlock(blockIndex, gazeBlock, dwellTime, { simplified });
+    this._generateComprehensionForBlock(blockIndex, gazeBlock, dwellTime, {
+        simplified,
+        trigger: struggleTrigger ? 'struggle' : 'manual'
+    });
 };
 
 FocusFlow._removeLegacyKeywordPanels = function() {
@@ -1314,12 +1330,13 @@ FocusFlow._displayComprehensionCard = function(blockIndex, cached, dwellTime, op
         });
     }
     if (options.recordAnalytics && this.analytics) {
-        this.analytics.recordComprehensionAssist(blockIndex);
+        this.analytics.recordComprehensionAssist(blockIndex, options.trigger || 'manual');
     }
 };
 
 FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwellTime, options = {}) {
     const simplified = !!(options && options.simplified);
+    const trigger = (options && options.trigger) || 'manual';
     const text = (this._allBlockTexts && this._allBlockTexts[blockIndex])
         ? this._allBlockTexts[blockIndex]
         : (gazeBlock && gazeBlock.element ? gazeBlock.element.textContent : '');
@@ -1355,7 +1372,10 @@ FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwell
             dwellSeconds: Math.round(dwellTime / 1000)
         };
         this._blockSummaryCache[blockIndex] = payload;
-        this._displayComprehensionCard(blockIndex, payload, dwellTime, { recordAnalytics: true });
+        this._displayComprehensionCard(blockIndex, payload, dwellTime, {
+            recordAnalytics: true,
+            trigger
+        });
         this._summaryGenerationInProgress.delete(blockIndex);
     };
 
@@ -1611,9 +1631,118 @@ FocusFlow.translateEntireDocument = async function() {
 /**
  * Open the end-of-session analytics report (heatmap + stats).
  */
-FocusFlow.showSessionReport = function() {
+FocusFlow.showSessionReport = function(options = {}) {
     if (typeof SessionReport === 'undefined' || !this.analytics) return;
-    SessionReport.show(this.analytics, this.readingView);
+    SessionReport.show(this.analytics, this.readingView, options);
+};
+
+FocusFlow.isDeepReadingSessionActive = function() {
+    return !!(this._deepReadingSession && this._deepReadingSession.active);
+};
+
+FocusFlow.startDeepReadingSession = function() {
+    if (!this._initialized) return;
+
+    this.resetSession({ silent: true });
+    if (typeof window.clearSidebarSessionData === 'function') {
+        window.clearSidebarSessionData();
+    }
+
+    const startTime = Date.now();
+    this._deepReadingSession = {
+        active: true,
+        startTime,
+        endTime: null
+    };
+    if (this.analytics) {
+        this.analytics.sessionStart = startTime;
+    }
+
+    this._syncDeepReadingControlsUI();
+
+    if (this.visualEffects) {
+        this.visualEffects.showPrompt(
+            '📖',
+            this._t('deepReading.started.title'),
+            this._t('deepReading.started.sub')
+        );
+    }
+};
+
+FocusFlow.endDeepReadingSession = function(options = {}) {
+    const showReport = options.showReport !== false;
+    const session = this._deepReadingSession || {};
+    const wasActive = !!session.active;
+
+    if (wasActive) {
+        session.active = false;
+        session.endTime = Date.now();
+        this._deepReadingSession = session;
+    }
+
+    this._syncDeepReadingControlsUI();
+
+    if (showReport) {
+        const reportOptions = {
+            titleKey: 'report.deepSessionTitle',
+            sessionStart: session.startTime || (this.analytics && this.analytics.sessionStart),
+            sessionEnd: session.endTime || Date.now()
+        };
+        this.showSessionReport(reportOptions);
+
+        if (wasActive && this.visualEffects && options.reason !== 'mode-exit') {
+            this.visualEffects.showPrompt(
+                '📊',
+                this._t('deepReading.ended.title'),
+                this._t('deepReading.ended.sub')
+            );
+        }
+    }
+};
+
+FocusFlow.endDeepReadingSessionOnModeExit = function() {
+    if (!this.isDeepReadingSessionActive()) return;
+    this.endDeepReadingSession({ showReport: true, reason: 'mode-exit' });
+};
+
+FocusFlow._syncDeepReadingControlsUI = function() {
+    const controls = document.getElementById('ff-deep-reading-controls');
+    const startBtn = document.getElementById('btn-deep-reading-start');
+    const endBtn = document.getElementById('btn-deep-reading-end');
+    const statusEl = document.getElementById('ff-deep-reading-status');
+    const inDeep = this.focusMode && this.focusMode.isMode('deep');
+
+    if (controls) controls.hidden = !inDeep;
+
+    const active = this.isDeepReadingSessionActive();
+    if (endBtn) endBtn.disabled = !active;
+    if (startBtn) startBtn.disabled = false;
+
+    if (statusEl) {
+        if (active && this._deepReadingSession.startTime) {
+            const elapsedSec = Math.floor((Date.now() - this._deepReadingSession.startTime) / 1000);
+            const mins = Math.floor(elapsedSec / 60);
+            const secs = elapsedSec % 60;
+            statusEl.textContent = this._t('deepReading.statusActive', {
+                time: `${mins}:${secs.toString().padStart(2, '0')}`
+            });
+        } else {
+            statusEl.textContent = this._t('deepReading.statusIdle');
+        }
+    }
+};
+
+FocusFlow._bindDeepReadingControls = function() {
+    const startBtn = document.getElementById('btn-deep-reading-start');
+    const endBtn = document.getElementById('btn-deep-reading-end');
+    if (startBtn && !startBtn.dataset.bound) {
+        startBtn.dataset.bound = '1';
+        startBtn.addEventListener('click', () => this.startDeepReadingSession());
+    }
+    if (endBtn && !endBtn.dataset.bound) {
+        endBtn.dataset.bound = '1';
+        endBtn.addEventListener('click', () => this.endDeepReadingSession({ showReport: true }));
+    }
 };
 
 FocusFlow._updateReadingSpeedDisplay = function() {

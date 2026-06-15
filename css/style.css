@@ -281,15 +281,21 @@ body::before {
     margin: 0;
     padding: 12px 16px;
     gap: 14px;
+    height: calc(100vh - 78px);
     min-height: calc(100vh - 78px);
+    max-height: calc(100vh - 78px);
+    overflow: hidden;
     position: relative;
     z-index: 1;
+    box-sizing: border-box;
+    align-items: stretch;
 }
 
 /* ---- Reading Panel (left side) ---- */
 .ff-reading-panel {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     max-width: calc(100% - 420px);
     display: flex;
     flex-direction: column;
@@ -310,6 +316,42 @@ body::before {
     padding: 12px 20px;
     border-bottom: 1px solid var(--border-color);
     background: rgba(255, 255, 255, 0.01);
+    flex-shrink: 0;
+    z-index: 2;
+}
+
+.ff-reading-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.ff-deep-reading-controls {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ff-focus-mode-deep .ff-deep-reading-controls {
+    display: inline-flex;
+}
+
+.ff-deep-reading-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    min-width: 72px;
+    text-align: right;
+}
+
+.ff-report-range {
+    margin: 0 0 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
 }
 
 .ff-reading-header h2 {
@@ -339,6 +381,7 @@ body::before {
 
 .ff-reading-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 24px 32px;
     line-height: var(--reading-line-height);
@@ -985,13 +1028,13 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
 .ff-dashboard-panel {
     width: 340px;
     flex-shrink: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 10px;
-    /* Let the sidebar grow with its content so every card (Goal, Features…) is
-       fully visible; the page scrolls instead of an inner short column. */
-    overflow-y: visible;
-    align-self: flex-start;
+    overflow-y: auto;
+    align-self: stretch;
+    align-content: flex-start;
     padding-right: 4px;
 }
 
@@ -1002,6 +1045,7 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
     box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
 }
 
 .ff-dashboard-panel .ff-card-header {
@@ -2586,6 +2630,8 @@ body:not([data-theme="dark"]) .ff-paragraph-debug [data-split-type="subtitle"] {
     }
     .ff-reading-panel {
         max-width: 100%;
+        flex: 1;
+        min-height: 0;
     }
     .ff-dashboard-panel {
         width: 100%;

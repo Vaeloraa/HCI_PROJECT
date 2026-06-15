@@ -47,6 +47,12 @@ class FocusMode {
         if (mode === this._currentMode) return;
         if (!['standard', 'deep'].includes(mode)) return;
 
+        if (this._currentMode === 'deep' && mode === 'standard' &&
+            typeof FocusFlow !== 'undefined' &&
+            typeof FocusFlow.endDeepReadingSessionOnModeExit === 'function') {
+            FocusFlow.endDeepReadingSessionOnModeExit();
+        }
+
         this._previousMode = this._currentMode;
         this._currentMode = mode;
 

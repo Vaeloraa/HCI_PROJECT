@@ -58,6 +58,9 @@ const I18n = {
             'report.close': 'Close',
             'report.deepSessionTitle': 'Deep Focus Reading Report',
             'report.sessionRange': '{start} – {end}',
+            'report.insightTitle': 'Reading Summary',
+            'report.insightLoading': 'Generating personalized summary with AI…',
+            'report.insightUnavailable': 'AI summary is unavailable. Check that the LLM API is configured and try again.',
 
             'deepReading.start': 'Start Reading',
             'deepReading.end': 'End & Report',
@@ -242,13 +245,6 @@ const I18n = {
             'debug.paragraph.typeTitle': 'TITLE',
             'debug.paragraph.typeSubtitle': 'SUBTITLE',
 
-            'insight.break': 'Your attention seems to be drifting. How about taking a short break?',
-            'insight.paceSlow': "You're re-reading some sections. Slowing down a bit might help comprehension.",
-            'insight.encourage': "Great focus! You're reading consistently well.",
-            'insight.paceInfo': "You're reading at a leisurely pace. That's perfectly fine for comprehension!",
-            'insight.paceFast': "You're reading quite fast. Make sure you're absorbing the material!",
-            'insight.idle': 'Keep reading — personalized feedback will appear here.',
-
             'import.none': 'No readable text found. Please import .txt, .md, .docx, or similar formats.',
             'import.success': 'Imported {count} files ({size} KB)',
             'import.failed': '{count} files could not be parsed: {files}',
@@ -340,6 +336,9 @@ const I18n = {
             'report.close': '关闭',
             'report.deepSessionTitle': '深度专注阅读报告',
             'report.sessionRange': '{start} – {end}',
+            'report.insightTitle': '阅读总结',
+            'report.insightLoading': '正在用 AI 生成个性化总结…',
+            'report.insightUnavailable': 'AI 总结暂不可用，请确认 LLM API 已配置后重试。',
 
             'deepReading.start': '开始阅读',
             'deepReading.end': '结束阅读并生成报告',
@@ -523,13 +522,6 @@ const I18n = {
             'debug.paragraph.badgeHeading': '标题 · {chars}字',
             'debug.paragraph.typeTitle': '主标题',
             'debug.paragraph.typeSubtitle': '副标题',
-
-            'insight.break': '注意力似乎有些分散，要不要休息一下？',
-            'insight.paceSlow': '你在重复阅读某些段落，放慢一点可能更有助于理解。',
-            'insight.encourage': '专注状态很好！你正在稳定地阅读。',
-            'insight.paceInfo': '你读得比较从容，这对理解内容很有帮助！',
-            'insight.paceFast': '你读得很快，请确保真正吸收了内容！',
-            'insight.idle': '继续阅读，个性化阅读建议会显示在这里。',
 
             'import.none': '未找到可读文本。请导入 .txt、.md、.docx 等格式。',
             'import.success': '已导入 {count} 个文件（{size} KB）',

@@ -38,6 +38,9 @@ const SessionReport = {
                     ${rangeHtml}
                     <div class="ff-report-stats">
                         ${this._statCard(t('report.duration'), `${report.durationMin} min`)}
+                        ${this._statCard(t('metrics.speed'), report.readingSpeed > 0 ? `${report.readingSpeed} ${t('metrics.wpm')}` : '--')}
+                        ${this._statCard(t('metrics.focusRatio'), `${report.focusRatio}%`)}
+                        ${this._statCard(t('metrics.regression'), `${report.regressionRate}${t('metrics.perMin')}`)}
                         ${this._statCard(t('report.distractions'), String(report.distractionCount))}
                         ${this._statCard(t('report.recovery'), report.avgRecoverySec > 0 ? `${report.avgRecoverySec}s` : '--')}
                     </div>
@@ -56,7 +59,10 @@ const SessionReport = {
                         <p>${t('report.assistManual', { count: report.comprehensionAssistManual || 0 })}</p>
                         <p>${t('report.assistStruggle', { count: report.comprehensionAssistStruggle || 0 })}</p>
                     </section>
-                    ${report.insight ? `<div class="ff-report-insight">${report.insight.icon} ${report.insight.message}</div>` : ''}
+                    <section class="ff-report-section">
+                        <h4>${t('report.insightTitle')}</h4>
+                        <div class="ff-report-insight ff-report-insight--loading" id="ff-session-report-insight">${t('report.insightLoading')}</div>
+                    </section>
                 </div>
                 <div class="ff-dialog-footer">
                     <button class="ff-btn ff-btn-secondary" id="ff-session-report-export">${t('report.export')}</button>
@@ -76,6 +82,46 @@ const SessionReport = {
         overlay.querySelector('#ff-session-report-export').onclick = () => {
             this._exportJson(report);
         };
+
+        this._loadInsight(report, options.llmManager, overlay);
+    },
+
+    _loadInsight(report, llmManager, overlay) {
+        const insightEl = overlay.querySelector('#ff-session-report-insight');
+        if (!insightEl) return;
+
+        const lang = (typeof I18n !== 'undefined') ? I18n.lang : 'en';
+        const t = (key) => {
+            if (typeof I18n !== 'undefined') return I18n.t(key);
+            return key;
+        };
+
+        const applyInsight = (insight) => {
+            if (!insight || !insight.message) return;
+            report.insight = insight;
+            insightEl.classList.remove('ff-report-insight--loading');
+            insightEl.textContent = `${insight.icon || '💡'} ${insight.message}`;
+        };
+
+        const showUnavailable = () => {
+            applyInsight({
+                icon: '💡',
+                message: t('report.insightUnavailable'),
+                type: 'unavailable'
+            });
+        };
+
+        if (!llmManager || typeof llmManager.generateSessionInsight !== 'function') {
+            showUnavailable();
+            return;
+        }
+
+        llmManager.generateSessionInsight(report, lang)
+            .then(applyInsight)
+            .catch((err) => {
+                console.warn('[SessionReport] LLM insight failed:', err.message);
+                showUnavailable();
+            });
     },
 
     _statCard(label, value) {

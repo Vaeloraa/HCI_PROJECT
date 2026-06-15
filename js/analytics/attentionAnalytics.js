@@ -2,7 +2,7 @@
  * FocusFlow - Attention Analytics Module
  * 
  * Analytics Layer: Tracks and analyzes user reading patterns,
- * attention metrics, and generates insights for adaptive interventions.
+ * attention metrics for session reporting and adaptive interventions.
  * 
  * Features:
  *   - Reading speed tracking (words per minute)
@@ -59,7 +59,6 @@ class AttentionAnalytics {
         this._maxReadingSpeedSamples = 100;
         this._minBlockDwellForSpeedMs = 2500;
         this._lastReadingSpeed = 0;
-        this._stickyInsight = null;
         
         // Auto-save interval
         this._saveInterval = setInterval(() => this._autoSave(), 30000);
@@ -252,87 +251,6 @@ class AttentionAnalytics {
     getRegressionRate() {
         const minutes = this.getSessionDuration();
         return minutes > 0 ? this.regressionCount / minutes : 0;
-    }
-
-    /**
-     * Generate personalized insight based on reading behavior
-     * @returns {Object} { message, type, severity }
-     */
-    generateInsight() {
-        const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
-        const readingSpeed = this.getReadingSpeed();
-        const focusRatio = this.getFocusRatio();
-        const regressionRate = this.getRegressionRate();
-        
-        if (focusRatio < 0.3) {
-            return {
-                message: t('insight.break'),
-                type: 'break_suggestion',
-                severity: 'high',
-                icon: '🧠'
-            };
-        }
-        
-        // High regression (re-reading too much)
-        if (regressionRate > 5) {
-            return {
-                message: t('insight.paceSlow'),
-                type: 'pace_suggestion',
-                severity: 'medium',
-                icon: '📖'
-            };
-        }
-        
-        // Good progress encouragement
-        if (focusRatio > 0.7) {
-            return {
-                message: t('insight.encourage'),
-                type: 'encouragement',
-                severity: 'low',
-                icon: '🌟'
-            };
-        }
-        
-        // Reading speed check
-        if (readingSpeed > 0 && readingSpeed < 100) {
-            return {
-                message: t('insight.paceInfo'),
-                type: 'pace_info',
-                severity: 'low',
-                icon: '🐢'
-            };
-        }
-        
-        if (readingSpeed > 400) {
-            return {
-                message: t('insight.paceFast'),
-                type: 'pace_warning',
-                severity: 'low',
-                icon: '⚡'
-            };
-        }
-        
-        return null;
-    }
-
-    /**
-     * Insight shown in the reading panel — persists until replaced by a new one.
-     */
-    getDisplayInsight() {
-        const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
-        const fresh = this.generateInsight();
-        if (fresh) {
-            this._stickyInsight = fresh;
-        }
-        if (this._stickyInsight) {
-            return this._stickyInsight;
-        }
-        return {
-            icon: '💡',
-            message: t('insight.idle'),
-            type: 'idle',
-            severity: 'low'
-        };
     }
 
     /**
@@ -565,7 +483,7 @@ class AttentionAnalytics {
             comprehensionAssistEvents: comprehensionAssists,
             distractionEpisodes,
             recoveryEpisodes,
-            insight: summary.insight
+            insight: null
         };
     }
 
@@ -585,8 +503,7 @@ class AttentionAnalytics {
             focusRatio: Math.round(this.getFocusRatio() * 100),
             distractionCount: this.distractionCount,
             blocksRead: this.blocksRead.size,
-            regressionRate: Math.round((this.regressionCount / windowMinutes) * 10) / 10,
-            insight: this.getDisplayInsight()
+            regressionRate: Math.round((this.regressionCount / windowMinutes) * 10) / 10
         };
     }
 
@@ -606,7 +523,6 @@ class AttentionAnalytics {
         this.blocksRead = new Set();
         this.readingSpeedSamples = [];
         this._lastReadingSpeed = 0;
-        this._stickyInsight = null;
         this.gazePath = [];
         this.regressionCount = 0;
         this.lastBlockIndex = -1;

@@ -857,7 +857,6 @@
                 const resolved = FocusFlow.decision && FocusFlow.decision.interventionStrategy
                     ? FocusFlow.decision.interventionStrategy.resolve(state)
                     : (FocusFlow.decision?.currentDecision?.strategy || { id: 'none' });
-                if (FocusFlow.analytics) FocusFlow.analytics._stickyInsight = null;
                 FocusFlow.updateDashboard(state, resolved, null);
             }
 

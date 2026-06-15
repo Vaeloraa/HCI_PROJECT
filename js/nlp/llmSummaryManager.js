@@ -6,6 +6,7 @@ class LLMSummaryManager {
     constructor(config) {
         this.config = config || {};
         this.apiUrl = config.llmApiUrl || '/api/summarize';
+        this.insightUrl = config.llmInsightUrl || '/api/session-insight';
         this.statusUrl = config.llmStatusUrl || '/api/llm/status';
         this.concurrency = config.llmConcurrency || 3;
         this.cache = new Map();
@@ -218,6 +219,70 @@ class LLMSummaryManager {
         [blockIndex + 1, blockIndex + 2].forEach((idx) => {
             if (texts[idx]) this.prefetch(idx, texts[idx], 'normal');
         });
+    }
+
+    _buildInsightStats(report, lang) {
+        const translateState = (state) => {
+            if (typeof I18n !== 'undefined' && typeof I18n.translateState === 'function') {
+                return I18n.translateState(state);
+            }
+            return state;
+        };
+
+        return {
+            durationMin: report.durationMin,
+            readingSpeed: report.readingSpeed,
+            focusRatioPercent: report.focusRatio,
+            distractionCount: report.distractionCount,
+            avgRecoverySec: report.avgRecoverySec,
+            blocksRead: report.blocksRead,
+            regressionRatePerMin: report.regressionRate,
+            comprehensionAssistManual: report.comprehensionAssistManual || 0,
+            comprehensionAssistStruggle: report.comprehensionAssistStruggle || 0,
+            stateDistribution: (report.stateDistribution || []).slice(0, 6).map((item) => ({
+                state: translateState(item.state),
+                percent: item.percent
+            })),
+            language: lang === 'zh' ? 'zh' : 'en'
+        };
+    }
+
+    /**
+     * Generate session report insight via LLM.
+     * @param {Object} report — output of generateSessionReport()
+     * @param {string} lang — UI language ('zh' | 'en')
+     */
+    async generateSessionInsight(report, lang) {
+        if (!this.isEnabled()) {
+            throw new Error('LLM not enabled');
+        }
+
+        const uiLang = lang === 'zh' ? 'zh' : 'en';
+        const stats = this._buildInsightStats(report, uiLang);
+        const res = await fetch(this.insightUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stats, lang: uiLang })
+        });
+
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            throw new Error(errBody.message || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        const text = (data.text || '').trim();
+        if (!text) {
+            throw new Error('Empty insight response');
+        }
+
+        return {
+            icon: '💡',
+            message: text,
+            type: 'llm',
+            method: 'llm',
+            model: data.model || ''
+        };
     }
 }
 

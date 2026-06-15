@@ -979,6 +979,12 @@ body[data-theme="dark"] .ff-sidebar-state-share {
     color: var(--report-text);
 }
 
+.ff-report-insight--loading {
+    opacity: 0.8;
+    font-style: italic;
+    color: var(--report-text-muted);
+}
+
 .ff-report-empty {
     font-size: 13px;
     color: var(--report-text-muted);

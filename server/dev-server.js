@@ -64,6 +64,61 @@ function buildPrompt(text, lang) {
     };
 }
 
+function buildSessionInsightPrompt(stats, lang) {
+    const useZh = lang === 'zh';
+    const payload = JSON.stringify(stats, null, 0);
+
+    if (useZh) {
+        return {
+            system: '你是阅读分析助手。根据本次阅读的统计数据，写一段2-3句的中文总结与建议。语气友好、具体、可操作。不要使用列表或标题。不要编造数据中没有的信息。',
+            user: `本次阅读统计数据（JSON）：\n${payload}\n\n请给出本次阅读的简短总结与改进建议。`
+        };
+    }
+    return {
+        system: 'You are a reading analytics assistant. Write 2-3 sentences of friendly, actionable reading feedback based ONLY on the session stats. No lists or headings. Do not invent metrics not in the data.',
+        user: `Session stats (JSON):\n${payload}\n\nProvide a brief summary and practical suggestion.`
+    };
+}
+
+async function callSessionInsightLLM(stats, lang) {
+    if (!API_KEY) {
+        const err = new Error('LLM API key not configured on server');
+        err.code = 'NO_API_KEY';
+        throw err;
+    }
+
+    const { system, user } = buildSessionInsightPrompt(stats, lang);
+    const response = await fetch(`${API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify({
+            model: MODEL,
+            temperature: 0.4,
+            max_tokens: 300,
+            messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: user }
+            ]
+        })
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        const err = new Error(`LLM HTTP ${response.status}: ${detail.slice(0, 200)}`);
+        err.code = 'LLM_HTTP_ERROR';
+        throw err;
+    }
+
+    const data = await response.json();
+    const content = data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : '';
+    return (content || '').trim();
+}
+
 async function callLLM(text, lang) {
     if (!API_KEY) {
         const err = new Error('LLM API key not configured on server');
@@ -230,6 +285,34 @@ const server = http.createServer(async (req, res) => {
             const summary = await callLLM(text, lang);
             sendJson(res, 200, {
                 text: summary,
+                lang,
+                method: 'llm',
+                model: MODEL
+            });
+        } catch (err) {
+            sendJson(res, err.code === 'NO_API_KEY' ? 503 : 502, {
+                error: err.code || 'LLM_ERROR',
+                message: err.message
+            });
+        }
+        return;
+    }
+
+    if (pathname === '/api/session-insight' && req.method === 'POST') {
+        try {
+            const raw = await readBody(req);
+            const body = JSON.parse(raw || '{}');
+            const stats = body.stats || {};
+            const lang = body.lang === 'zh' ? 'zh' : 'en';
+
+            if (!stats || typeof stats !== 'object' || !Object.keys(stats).length) {
+                sendJson(res, 400, { error: 'empty_stats' });
+                return;
+            }
+
+            const insight = await callSessionInsightLLM(stats, lang);
+            sendJson(res, 200, {
+                text: insight,
                 lang,
                 method: 'llm',
                 model: MODEL

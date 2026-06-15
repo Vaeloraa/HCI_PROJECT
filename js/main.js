@@ -67,6 +67,7 @@ FocusFlow.config = {
     summaryMaxSentences: 2,
     llmApiUrl: '/api/summarize',
     llmTranslateUrl: '/api/translate',
+    llmInsightUrl: '/api/session-insight',
     llmStatusUrl: '/api/llm/status',
     llmConcurrency: 3,
     llmTranslateConcurrency: 2,
@@ -1633,7 +1634,10 @@ FocusFlow.translateEntireDocument = async function() {
  */
 FocusFlow.showSessionReport = function(options = {}) {
     if (typeof SessionReport === 'undefined' || !this.analytics) return;
-    SessionReport.show(this.analytics, this.readingView, options);
+    SessionReport.show(this.analytics, this.readingView, {
+        ...options,
+        llmManager: this.llmSummaryManager
+    });
 };
 
 FocusFlow.isDeepReadingSessionActive = function() {

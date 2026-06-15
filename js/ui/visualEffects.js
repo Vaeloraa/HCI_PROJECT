@@ -408,11 +408,12 @@ class VisualEffects {
      */
     showPrompt(icon, title, subtitle) {
         const prompt = document.createElement('div');
+        prompt.className = 'ff-prompt-toast';
         prompt.style.cssText = `
             position: fixed;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            z-index: 1002;
+            z-index: 10050;
             background: rgba(17, 24, 39, 0.95);
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 16px;
@@ -455,6 +456,49 @@ class VisualEffects {
     }
 
     /**
+     * Center intervention card for distraction milestones (6s / 12s).
+     */
+    showInterventionCard(icon, title, options = {}) {
+        const duration = options.duration || 4500;
+        let card = document.getElementById('ff-intervention-card');
+        if (!card) {
+            card = document.createElement('div');
+            card.id = 'ff-intervention-card';
+            card.className = 'ff-intervention-card';
+            card.setAttribute('role', 'alert');
+            card.setAttribute('aria-live', 'assertive');
+            document.body.appendChild(card);
+        }
+
+        card.replaceChildren();
+        const iconEl = document.createElement('div');
+        iconEl.className = 'ff-intervention-card-icon';
+        iconEl.textContent = icon || '💡';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'ff-intervention-card-title';
+        titleEl.textContent = title || '';
+        card.appendChild(iconEl);
+        card.appendChild(titleEl);
+
+        card.classList.remove('ff-intervention-card--hide');
+        card.classList.add('ff-intervention-card--show');
+        card.hidden = false;
+
+        window.clearTimeout(this._interventionCardTimer);
+        this._interventionCardTimer = window.setTimeout(() => {
+            card.classList.remove('ff-intervention-card--show');
+            card.classList.add('ff-intervention-card--hide');
+        }, duration);
+    }
+
+    hideInterventionCard() {
+        const card = document.getElementById('ff-intervention-card');
+        if (!card) return;
+        card.classList.remove('ff-intervention-card--show');
+        card.classList.add('ff-intervention-card--hide');
+    }
+
+    /**
      * Show wake-up cue overlay (called from main.js)
      */
     showWakeUpCue() {
@@ -478,7 +522,7 @@ class VisualEffects {
                     top: 0; left: 0;
                     width: 100%; height: 100%;
                     pointer-events: none;
-                    z-index: 91;
+                    z-index: 1001;
                     border: 0px solid rgba(100, 180, 255, 0);
                     box-sizing: border-box;
                     transition: border-width 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease;
@@ -488,9 +532,9 @@ class VisualEffects {
         }
         
         if (active) {
-            this.wakeupOverlay.style.borderWidth = '8px';
-            this.wakeupOverlay.style.borderColor = 'rgba(100, 180, 255, 0.4)';
-            this.wakeupOverlay.style.boxShadow = 'inset 0 0 80px rgba(100, 180, 255, 0.1)';
+            this.wakeupOverlay.style.borderWidth = '10px';
+            this.wakeupOverlay.style.borderColor = 'rgba(96, 165, 250, 0.75)';
+            this.wakeupOverlay.style.boxShadow = 'inset 0 0 120px rgba(96, 165, 250, 0.18)';
             this.triggerParticles('wakeup');
         } else {
             this.wakeupOverlay.style.borderWidth = '0px';
@@ -953,6 +997,30 @@ class VisualEffects {
 
     _preloadSounds() {
         this.soundEnabled = true;
+        this._audioCtx = null;
+        const prime = () => this._ensureAudioContext();
+        document.addEventListener('click', prime, { once: true, passive: true });
+        document.addEventListener('keydown', prime, { once: true, passive: true });
+    }
+
+    _ensureAudioContext() {
+        if (this._audioCtx) {
+            if (this._audioCtx.state === 'suspended') {
+                this._audioCtx.resume().catch(() => {});
+            }
+            return this._audioCtx;
+        }
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return null;
+            this._audioCtx = new Ctx();
+            if (this._audioCtx.state === 'suspended') {
+                this._audioCtx.resume().catch(() => {});
+            }
+            return this._audioCtx;
+        } catch (_) {
+            return null;
+        }
     }
 
     /**
@@ -961,9 +1029,10 @@ class VisualEffects {
      */
     playSound(type) {
         if (!this.soundEnabled) return;
-        
+
         try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = this._ensureAudioContext();
+            if (!ctx) return;
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
@@ -1033,9 +1102,10 @@ class VisualEffects {
             gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
             osc.start(ctx.currentTime);
             osc.stop(ctx.currentTime + duration);
-            
-            // Cleanup
-            osc.onended = () => ctx.close();
+
+            osc.onended = () => {
+                try { osc.disconnect(); gain.disconnect(); } catch (_) { /* ignore */ }
+            };
         } catch (e) {
             // Silently fail - audio is non-critical
         }

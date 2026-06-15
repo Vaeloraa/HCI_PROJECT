@@ -101,6 +101,7 @@ FocusFlow._currentStateName = 'Normal';
 FocusFlow._lastGazeTime = 0;
 FocusFlow._lastGazeX = NaN;
 FocusFlow._lastGazeY = NaN;
+FocusFlow._outsidePanelSince = 0;
 FocusFlow._offScreenStart = 0;
 FocusFlow._wakeUpTriggered = false;
 FocusFlow._lastDistractionPromptTime = 0;
@@ -948,6 +949,13 @@ FocusFlow._enrichFeaturesForCognition = function(features) {
     features.pointerInReadingPanel = pointerInReadingPanel;
 
     const now = performance.now();
+    if (!pointerInReadingPanel) {
+        if (!this._outsidePanelSince) this._outsidePanelSince = now;
+    } else {
+        this._outsidePanelSince = 0;
+    }
+    features.outsidePanelDuration = this._outsidePanelSince ? now - this._outsidePanelSince : 0;
+
     let paragraphDwellTime = 0;
     if (pointerInReadingPanel && onReadingContent && readingBlockIndex >= 0) {
         if (readingBlockIndex !== this._lastBlockIndex || this._blockDwellStart <= 0) {
@@ -973,6 +981,14 @@ FocusFlow.runCognitionTick = function() {
 
     const now = performance.now();
 
+    if (!Number.isFinite(this._lastGazeX) && this.perception.mouseTracker) {
+        const mt = this.perception.mouseTracker;
+        if (mt.lastMoveTime > 0) {
+            this._lastGazeX = mt.mouseX;
+            this._lastGazeY = mt.mouseY;
+        }
+    }
+
     const features = this._enrichFeaturesForCognition(this.perception.getFeatures());
     this.cognition.update(features, now);
     const state = this.cognition.getState();
@@ -982,17 +998,15 @@ FocusFlow.runCognitionTick = function() {
         this.analytics.tickActivity(state.name);
     }
 
-    // Gaze mode: full pipeline runs in onGazeData — only refresh state duration here.
-    if (this.config.trackingMode === 'gaze' && this.config.useWebGazer && !this.config.demoMode) {
-        return;
-    }
-
     const strategy = this.decision.decide(state, features, {});
 
     let gazeBlock = null;
     if (this.readingView && Number.isFinite(this._lastGazeX) && Number.isFinite(this._lastGazeY)) {
         gazeBlock = this.readingView.getBlockAtGaze(this._lastGazeX, this._lastGazeY);
     }
+
+    // Duration milestones (6s / 12s distracted, 8s struggling) must run on the cognition tick
+    // even in gaze mode — onGazeData alone may stall when the user looks away.
     this._applyInterventions(state, strategy, gazeBlock, features);
 };
 
@@ -1185,30 +1199,33 @@ FocusFlow._applyInterventions = function(state, strategy, gazeBlock, features) {
         displayState
     };
 
-    if (this._interventionMilestones.stateKey !== state.name) {
-        this._resetInterventionMilestones(state.name);
+    const prevKey = this._interventionMilestones.stateKey;
+    if (prevKey !== state.name) {
+        if (prevKey === 'Distracted') {
+            InterventionExecutor.deactivateAll(ctx);
+        }
 
-        if (state.name === 'Normal' || state.name === 'Idle') {
-            InterventionExecutor.deactivateAll(ctx);
+        this._interventionMilestones.stateKey = state.name;
+
+        if (state.name === 'Distracted') {
+            this._interventionMilestones.distracted6 = false;
+            this._interventionMilestones.distracted12 = false;
+            InterventionExecutor._distractionFired6 = false;
+            InterventionExecutor._distractionFired12 = false;
         } else if (state.name === 'Struggling') {
+            this._interventionMilestones.struggling8 = false;
             InterventionExecutor.activate({ id: 'keyword_highlight' }, ctx, { force: true });
-        } else if (state.name === 'Distracted') {
-            InterventionExecutor.deactivateAll(ctx);
+        } else if (state.name === 'Normal' || state.name === 'Idle') {
+            if (prevKey !== 'Distracted') {
+                InterventionExecutor.deactivateAll(ctx);
+            }
+            this._interventionMilestones.distracted6 = false;
+            this._interventionMilestones.distracted12 = false;
+            this._interventionMilestones.struggling8 = false;
         }
     }
 
     const durationSec = (state.duration || 0) / 1000;
-
-    if (state.name === 'Distracted') {
-        if (durationSec >= 6 && !this._interventionMilestones.distracted6) {
-            InterventionExecutor.activate({ id: 'floating_prompt' }, ctx);
-            this._interventionMilestones.distracted6 = true;
-        }
-        if (durationSec >= 12 && !this._interventionMilestones.distracted12) {
-            InterventionExecutor.activate({ id: 'sound_alert' }, ctx);
-            this._interventionMilestones.distracted12 = true;
-        }
-    }
 
     if (state.name === 'Struggling') {
         if (durationSec >= 8 && !this._interventionMilestones.struggling8) {
@@ -1882,6 +1899,7 @@ FocusFlow.resetSession = function(options) {
     this._lastStrugglePrompt = false;
     this._wakeUpTriggered = false;
     this._offScreenStart = 0;
+    this._outsidePanelSince = 0;
     this._gazeOffBlockStart = 0;
     this._wpmTrackIndex = -1;
     this._wpmTrackStart = 0;

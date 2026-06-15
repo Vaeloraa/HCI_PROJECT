@@ -3,8 +3,8 @@
  *
  * 6 display states + 5 intervention modes (per 1.md):
  *   Focus            → focus
- *   LowDistraction   → floating_prompt (<6s distracted)
- *   HighDistraction  → sound_alert (≥6s distracted)
+ *   LowDistraction   → floating_prompt (fires at 6s distracted)
+ *   HighDistraction  → sound_alert (fires at 12s distracted)
  *   LowStruggling    → keyword_highlight (<8s struggling)
  *   HighStruggling   → summary_panel (≥8s struggling)
  *   Idle             → none (intermediate / waiting)

@@ -17,6 +17,8 @@ const InterventionExecutor = {
 
     _activeId: 'none',
     _keywordBlockIndex: -1,
+    _distractionFired6: false,
+    _distractionFired12: false,
 
     /**
      * Fire one-shot intervention when state or strategy tier changes.
@@ -51,9 +53,14 @@ const InterventionExecutor = {
             ve.clearHighlight();
             ve.clearKeywordHighlights();
             ve.showWakeupOverlay(false);
+            if (typeof ve.hideInterventionCard === 'function') {
+                ve.hideInterventionCard();
+            }
         }
         this._activeId = 'none';
         this._keywordBlockIndex = -1;
+        this._distractionFired6 = false;
+        this._distractionFired12 = false;
     },
 
     sustain(strategy, ctx) {
@@ -67,9 +74,42 @@ const InterventionExecutor = {
 
         ve.currentState = state.name;
 
+        if (state.name === 'Distracted') {
+            ve.clearHighlight();
+            const durationSec = Math.max(0, (performance.now() - (state.startTime || performance.now())) / 1000);
+
+            if (durationSec >= 12 && !this._distractionFired12) {
+                this._distractionFired12 = true;
+                if (!this._distractionFired6) {
+                    this._distractionFired6 = true;
+                    this._showDistractionPrompt(ve, 'floating_prompt');
+                    window.setTimeout(() => {
+                        this._showDistractionPrompt(ve, 'sound_alert');
+                    }, 700);
+                } else {
+                    this._showDistractionPrompt(ve, 'sound_alert');
+                }
+            } else if (durationSec >= 6 && !this._distractionFired6) {
+                this._distractionFired6 = true;
+                this._showDistractionPrompt(ve, 'floating_prompt');
+            }
+
+            if (durationSec >= 12) {
+                ve.showWakeupOverlay(true);
+                const dimBase = this.SUSTAINED.sound_alert.dim || 0.45;
+                const dim = Math.min(0.65, Math.max(0.28, dimBase * (ff.config.dimIntensity || 0.35) * 2));
+                ve.setDimLevel(dim);
+            } else {
+                ve.showWakeupOverlay(false);
+                ve.setDimLevel(0);
+            }
+            return;
+        }
+
         if (state.name === 'Normal' || state.name === 'Idle' || strategyId === 'focus' || strategyId === 'none') {
             ve.clearHighlight();
             ve.setDimLevel(0);
+            ve.showWakeupOverlay(false);
             return;
         }
 
@@ -120,6 +160,33 @@ const InterventionExecutor = {
         return key;
     },
 
+    /**
+     * Same center toast as the welcome card (visualEffects.showPrompt).
+     */
+    _showDistractionPrompt(ve, tier) {
+        if (!ve || typeof ve.showPrompt !== 'function') return;
+
+        if (tier === 'floating_prompt') {
+            ve.showPrompt(
+                '👀',
+                this._t('intervention.floating_prompt.title'),
+                this._t('intervention.floating_prompt.sub')
+            );
+            if (typeof ve.playSound === 'function') ve.playSound('distracted');
+            return;
+        }
+
+        if (tier === 'sound_alert') {
+            ve.showWakeupOverlay(true);
+            ve.showPrompt(
+                '🔔',
+                this._t('intervention.sound_alert.title'),
+                this._t('intervention.sound_alert.sub')
+            );
+            if (typeof ve.playSound === 'function') ve.playSound('wakeup');
+        }
+    },
+
     _prompt(icon, titleKey, subKey, params) {
         const ff = window.FocusFlow;
         if (!ff || !ff.visualEffects) return;
@@ -128,6 +195,12 @@ const InterventionExecutor = {
             this._t(titleKey, params),
             subKey ? this._t(subKey, params) : ''
         );
+    },
+
+    _promptTitle(icon, titleKey, params) {
+        const ff = window.FocusFlow;
+        if (!ff || !ff.visualEffects) return;
+        ff.visualEffects.showPrompt(icon, this._t(titleKey, params), '');
     },
 
     _blockIndex(ctx) {
@@ -155,19 +228,20 @@ const InterventionExecutor = {
 
     _ACTIVATE: {
         floating_prompt(strategy, ctx) {
-            InterventionExecutor._prompt('👀', 'intervention.floating_prompt.title', 'intervention.floating_prompt.sub');
-            if (ctx.focusFlow.visualEffects) {
-                ctx.focusFlow.visualEffects.playSound('distracted');
+            InterventionExecutor._promptTitle('👀', 'intervention.floating_prompt.title');
+            const ve = ctx.focusFlow && ctx.focusFlow.visualEffects;
+            if (ve) {
+                ve.playSound('distracted');
             }
         },
 
         sound_alert(strategy, ctx) {
-            const ve = ctx.focusFlow.visualEffects;
+            const ve = ctx.focusFlow && ctx.focusFlow.visualEffects;
             if (ve) {
-                ve.showWakeUpCue();
+                ve.showWakeupOverlay(true);
                 ve.playSound('wakeup');
             }
-            InterventionExecutor._prompt('🔔', 'intervention.sound_alert.title', 'intervention.sound_alert.sub');
+            InterventionExecutor._promptTitle('🔔', 'intervention.sound_alert.title');
         },
 
         keyword_highlight(strategy, ctx) {

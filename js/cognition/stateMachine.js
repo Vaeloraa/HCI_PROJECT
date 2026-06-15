@@ -135,7 +135,9 @@ class StateMachine {
         const leaveThreshold = gazeMode
             ? T.distractionLeaveReadingGaze
             : T.distractionLeaveReadingMouse;
-        const leftReadingArea = !inPanel && idle >= leaveThreshold;
+        const outsideDur = features.outsidePanelDuration || 0;
+        const leftReadingArea = !inPanel &&
+            (outsideDur >= leaveThreshold || idle >= leaveThreshold);
 
         const faceAbsent = gazeMode &&
             !facePresent &&
@@ -176,6 +178,7 @@ class StateMachine {
             activelyReading,
             faceAbsent,
             leftReadingArea,
+            outsideDur,
             gazeMode,
             facePresent
         };
@@ -187,7 +190,8 @@ class StateMachine {
     _hasLeftReadingArea(sig, currentState) {
         if (sig.inPanel) return false;
         if (currentState === 'Struggling') return true;
-        return sig.idle >= this._leaveThreshold(sig);
+        const outsideDur = sig.outsideDur || 0;
+        return outsideDur >= this._leaveThreshold(sig) || sig.idle >= this._leaveThreshold(sig);
     }
 
     /**
@@ -217,6 +221,9 @@ class StateMachine {
         }
 
         if (current === 'Distracted') {
+            if (!sig.inPanel || sig.clearlyDistracted) {
+                return this.STATES.DISTRACTED;
+            }
             if (sig.activelyReading || sig.quietlyReading) {
                 return this.STATES.NORMAL;
             }

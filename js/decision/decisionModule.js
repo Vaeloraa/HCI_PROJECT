@@ -61,7 +61,6 @@ class DecisionModule {
             thresholds: thresholds,
             state: {
                 name: state.name,
-                confidence: state.confidence,
                 duration: state.duration
             },
             profile: {

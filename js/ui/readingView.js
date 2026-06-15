@@ -88,11 +88,7 @@ class ReadingView {
         this._baseLetterSpacing = 0.3;
         this._baseParagraphGap = 6;
         
-        // WPM tracking
-        this._wpmValue = 0;
-        this._blockStartTime = 0;
-        this._currentBlockWordCount = 0;
-        this._wpmUpdateInterval = null;
+        this._blockTexts = [];
         
         // Gaze cursor
         this._gazeCursor = null;
@@ -110,7 +106,6 @@ class ReadingView {
         this._boundSyncParagraphDebug = () => this._syncParagraphDebugOverlays();
         
         this._loadRawText(DEFAULT_READING_TEXT, 'default');
-        this._startWpmTracking();
         this._bindLayoutListeners();
     }
 
@@ -167,6 +162,7 @@ class ReadingView {
         this.container.innerHTML = '';
         this.blockElements = [];
         this.blockRects = [];
+        this._blockTexts = [];
         let blockCounter = 0;
         let paragraphNumber = 1;
         const doc = this.document || { title: null, subtitle: null, blocks: [] };
@@ -250,6 +246,7 @@ class ReadingView {
             paragraphNumber++;
 
             this.container.appendChild(el);
+            this._blockTexts.push(block.text);
             this.blockElements.push(el);
             blockCounter++;
         }
@@ -261,6 +258,18 @@ class ReadingView {
 
     getBlockElement(blockIndex) {
         return this.blockElements[blockIndex] || null;
+    }
+
+    getBlockText(blockIndex) {
+        return this._blockTexts[blockIndex] || '';
+    }
+
+    getBlockWordCount(blockIndex) {
+        const el = this.getBlockElement(blockIndex);
+        if (!el) return 0;
+        const parsed = parseInt(el.dataset.wordCount, 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        return this._countWords(this.getBlockText(blockIndex));
     }
 
     updateComprehensionButton(blockIndex, state) {
@@ -506,50 +515,6 @@ class ReadingView {
     }
 
     /**
-     * Start WPM tracking interval
-     */
-    _startWpmTracking() {
-        if (this._wpmUpdateInterval) {
-            clearInterval(this._wpmUpdateInterval);
-        }
-        this._wpmUpdateInterval = setInterval(() => {
-            this._updateWpm();
-        }, 2000);
-    }
-
-    /**
-     * Update WPM calculation
-     */
-    _updateWpm() {
-        if (!this._blockStartTime || !this._currentBlockWordCount) return;
-        
-        const elapsed = (Date.now() - this._blockStartTime) / 1000 / 60; // in minutes
-        if (elapsed > 0) {
-            this._wpmValue = Math.round(this._currentBlockWordCount / elapsed);
-            // Clamp to reasonable range
-            this._wpmValue = Math.max(0, Math.min(800, this._wpmValue));
-            this._updateWpmDisplay();
-        }
-    }
-
-    /**
-     * Update WPM display in reading header
-     */
-    _updateWpmDisplay() {
-        // Try new WPM element first, fall back to dashboard metric
-        const wpmEl = document.getElementById('ff-wpm-value');
-        if (wpmEl) {
-            wpmEl.textContent = this._wpmValue;
-        }
-        // Also update the reading header stat
-        const headerWpm = document.getElementById('ff-wpm');
-        if (headerWpm) {
-            const unit = (typeof I18n !== 'undefined') ? I18n.t('metrics.wpm') : 'wpm';
-            headerWpm.textContent = this._wpmValue > 0 ? this._wpmValue + ' ' + unit : '-- ' + unit;
-        }
-    }
-
-    /**
      * Refresh cached bounding rects for all paragraph blocks.
      */
     refreshBlockRects() {
@@ -622,16 +587,11 @@ class ReadingView {
     }
 
     /**
-     * Set block dwell time for WPM tracking
-     * @param {number} blockIndex 
-     * @param {string} text 
+     * Set the highlighted paragraph block.
+     * @param {number} blockIndex
      */
-    setCurrentBlock(blockIndex, text) {
+    setCurrentBlock(blockIndex) {
         this.currentHighlightIndex = blockIndex;
-        if (text) {
-            this._currentBlockWordCount = text.split(/\s+/).filter(w => w.length > 0).length;
-            this._blockStartTime = Date.now();
-        }
     }
 
     /**
@@ -728,7 +688,10 @@ class ReadingView {
      * Get WPM value
      */
     getWpm() {
-        return this._wpmValue;
+        if (typeof FocusFlow !== 'undefined' && FocusFlow.analytics) {
+            return FocusFlow.analytics.getLastReadingSpeed();
+        }
+        return 0;
     }
 
     /**
@@ -739,20 +702,13 @@ class ReadingView {
         this.currentBlockId = null;
         this.isDimmed = false;
         this.dimIntensity = 0;
-        this._wpmValue = 0;
-        this._currentBlockWordCount = 0;
-        this._blockStartTime = 0;
         this.hideGazeCursor();
-        this._updateWpmDisplay();
     }
     
     /**
      * Clean up
      */
     destroy() {
-        if (this._wpmUpdateInterval) {
-            clearInterval(this._wpmUpdateInterval);
-        }
         window.removeEventListener('scroll', this._boundScheduleRectRefresh);
         window.removeEventListener('resize', this._boundScheduleRectRefresh);
         if (this._gazeCursor && this._gazeCursor.parentNode) {

@@ -47,13 +47,6 @@ class StateMachine {
         this._stateDuration = 0;
         this._strugglingBlockIndex = -1;
 
-        this._stateProbabilities = {
-            Normal: 0.85,
-            Distracted: 0.05,
-            Struggling: 0.1,
-            Idle: 0
-        };
-
         this.stateHistory = [];
         this._maxHistoryLength = 1000;
 
@@ -86,9 +79,6 @@ class StateMachine {
             this._featureHistory.shift();
         }
 
-        const probs = this._computeStateProbabilities(features);
-        this._stateProbabilities = probs;
-
         const newState = this._decideTransition(features);
         if (newState && newState !== this._currentState) {
             this._transitionTo(newState, features);
@@ -98,7 +88,6 @@ class StateMachine {
             state: this._currentState.name,
             timestamp: now,
             duration: this._stateDuration,
-            probabilities: { ...probs },
             features: {
                 onReadingContent: features.onReadingContent,
                 pointerInReadingPanel: features.pointerInReadingPanel,
@@ -114,12 +103,12 @@ class StateMachine {
         }
 
         if (this.debug) {
-            this._debugLog(probs);
+            this._debugLog();
         }
     }
 
     /**
-     * Derive reading-context signals used by both rules and probability chart.
+     * Derive reading-context signals used by state rules.
      */
     _isGazeMode(features) {
         if (features.faceTracking === true) return true;
@@ -241,56 +230,6 @@ class StateMachine {
         return this.STATES.IDLE;
     }
 
-    _computeStateProbabilities(features) {
-        const T = this.thresholds;
-        const sig = this._readingSignals(features);
-        const current = this._currentState.name;
-
-        let normal = 0.12;
-        let distracted = 0.06;
-        let struggling = 0.06;
-        let idle = 0.1;
-
-        if (sig.activelyReading) normal += 0.55;
-        if (sig.quietlyReading) normal += 0.35;
-        if (sig.inPanel && sig.idle < 5000) normal += 0.12;
-        if (sig.scrolling && sig.onRead) normal += 0.1;
-        if (sig.moving && sig.onRead) normal += 0.08;
-        if (current === 'Distracted' && sig.inPanel && !sig.clearlyDistracted) normal += 0.25;
-
-        if (sig.stuckOnParagraph && sig.inPanel) struggling += 0.62;
-        if (sig.inPanel && sig.onRead && sig.dwell > 5000 && !sig.scrolling) struggling += 0.18;
-
-        if (current === 'Struggling' && !sig.inPanel) distracted += 0.4;
-
-        if (sig.clearlyDistracted) distracted += 0.58;
-        if (sig.leftReadingArea) distracted += 0.22;
-        if (sig.faceAbsent) distracted += 0.25;
-        if (sig.gazeMode && sig.leftReadingArea) distracted += 0.2;
-        if (sig.gazeMode && (features.dispersion || 0) > T.distractionGazeScatter && !sig.inPanel) distracted += 0.15;
-
-        if (sig.inPanel && !sig.onRead && !sig.clearlyDistracted && !sig.stuckOnParagraph) idle += 0.35;
-        if (!sig.inPanel && sig.idle < this._leaveThreshold(sig)) idle += 0.2;
-        if (!sig.activelyReading && !sig.quietlyReading && !sig.clearlyDistracted && !sig.stuckOnParagraph) idle += 0.15;
-
-        if (current === 'Normal') normal += 0.08;
-        else if (current === 'Distracted') distracted += 0.06;
-        else if (current === 'Struggling') struggling += 0.06;
-        else if (current === 'Idle') idle += 0.08;
-
-        const total = normal + distracted + struggling + idle;
-        if (total <= 0) {
-            return { Normal: 0.25, Distracted: 0.25, Struggling: 0.25, Idle: 0.25 };
-        }
-
-        return {
-            Normal: normal / total,
-            Distracted: distracted / total,
-            Struggling: struggling / total,
-            Idle: idle / total
-        };
-    }
-
     _leaveThreshold(sig) {
         return sig.gazeMode
             ? this.thresholds.distractionLeaveReadingGaze
@@ -348,13 +287,12 @@ class StateMachine {
             this._strugglingBlockIndex = -1;
         }
 
-        console.log(`[StateMachine] 🔄 ${this._previousState.name} → ${newState.name} (confidence: ${(this._stateProbabilities[newState.name] * 100).toFixed(0)}%)`);
+        console.log(`[StateMachine] 🔄 ${this._previousState.name} → ${newState.name}`);
 
         document.dispatchEvent(new CustomEvent('focusflow-state-change', {
             detail: {
                 previousState: this._previousState,
                 currentState: this._currentState,
-                probabilities: this._stateProbabilities,
                 timestamp: now,
                 features: features
             }
@@ -377,15 +315,10 @@ class StateMachine {
         const now = performance.now();
         return {
             ...this._currentState,
-            confidence: this._stateProbabilities[this._currentState.name] ?? 0.5,
             duration: now - this._stateStartTime,
             startTime: this._stateStartTime,
             timestamp: now
         };
-    }
-
-    getProbabilities() {
-        return { ...this._stateProbabilities };
     }
 
     getRecentHistory(count = 50) {
@@ -418,13 +351,9 @@ class StateMachine {
         Object.assign(this.thresholds, newThresholds);
     }
 
-    _debugLog(probs) {
+    _debugLog() {
         console.log(`[StateMachine] ${this._currentState.icon} ${this._currentState.name} | ` +
-            `N:${(probs.Normal * 100).toFixed(0)}% ` +
-            `D:${(probs.Distracted * 100).toFixed(0)}% ` +
-            `S:${(probs.Struggling * 100).toFixed(0)}% ` +
-            `I:${(probs.Idle * 100).toFixed(0)}% ` +
-            `| duration: ${(this._stateDuration / 1000).toFixed(1)}s`
+            `duration: ${(this._stateDuration / 1000).toFixed(1)}s`
         );
     }
 
@@ -434,12 +363,6 @@ class StateMachine {
         this._stateStartTime = performance.now();
         this._stateDuration = 0;
         this._strugglingBlockIndex = -1;
-        this._stateProbabilities = {
-            Normal: 0.85,
-            Distracted: 0.05,
-            Struggling: 0.1,
-            Idle: 0
-        };
         this.stateHistory = [];
         this._featureHistory = [];
     }

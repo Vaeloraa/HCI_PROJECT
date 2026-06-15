@@ -45,6 +45,13 @@ const InterventionExecutor = {
 
     deactivateAll(ctx) {
         this._deactivatePartial(this._activeId, ctx, 'none');
+        const ve = ctx && ctx.focusFlow && ctx.focusFlow.visualEffects;
+        if (ve) {
+            ve.setDimLevel(0);
+            ve.clearHighlight();
+            ve.clearKeywordHighlights();
+            ve.showWakeupOverlay(false);
+        }
         this._activeId = 'none';
         this._keywordBlockIndex = -1;
     },

@@ -79,6 +79,8 @@ FocusFlow._gazeHistory = [];
 FocusFlow._maxGazeHistory = 10;
 FocusFlow._lastBlockIndex = -1;
 FocusFlow._blockDwellStart = 0;
+FocusFlow._wpmTrackIndex = -1;
+FocusFlow._wpmTrackStart = 0;
 FocusFlow._blockChangeTime = 0;
 FocusFlow._blockSummaryCache = {};
 FocusFlow._paragraphSummaries = {};
@@ -238,9 +240,9 @@ FocusFlow._initBlockWordCounts = function() {
     }
 
     for (let i = 0; i < blocks.length; i++) {
-        const text = blocks[i].textContent || '';
+        const text = this.readingView.getBlockText(i);
         this._allBlockTexts.push(text);
-        const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+        const wordCount = this.readingView.getBlockWordCount(i);
         this.analytics.setBlockWordCount(i, wordCount);
         if (this.keywordExtractor) {
             this.keywordExtractor.updateVocabulary(text);
@@ -1027,6 +1029,19 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     const strategy = this.decision.decide(currentState, features, {});
     this._applyInterventions(currentState, strategy, gazeBlock, features);
     const blockIndex = gazeBlock ? gazeBlock.index : -1;
+
+    if (blockIndex >= 0 && blockIndex !== this._wpmTrackIndex) {
+        if (this._wpmTrackIndex >= 0 && this._wpmTrackStart > 0) {
+            const dwellMs = now - this._wpmTrackStart;
+            this.analytics.recordBlockSpeed(this._wpmTrackIndex, dwellMs, currentState.name);
+            this._updateReadingSpeedDisplay();
+        }
+        this._wpmTrackIndex = blockIndex;
+        this._wpmTrackStart = now;
+    } else if (blockIndex < 0) {
+        this._wpmTrackIndex = -1;
+        this._wpmTrackStart = 0;
+    }
     
     // Update visual effects with gaze position (radial dim center, glow)
     if (this.visualEffects) {
@@ -1037,11 +1052,10 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     // MEMBER B: Adaptive Visual Effects (via InterventionExecutor)
     // ============================================
     // ============================================
-    // MEMBER B: Set current block for WPM tracking
+    // MEMBER B: Set current block highlight
     // ============================================
-    if (gazeBlock && gazeBlock.index !== this._lastBlockIndex) {
-        const text = gazeBlock.element ? gazeBlock.element.textContent || '' : '';
-        this.readingView.setCurrentBlock(gazeBlock.index, text);
+    if (gazeBlock && gazeBlock.index !== this.readingView.currentHighlightIndex) {
+        this.readingView.setCurrentBlock(gazeBlock.index);
     }
 
     // ============================================
@@ -1054,7 +1068,7 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
         }
         this.debugPanel.setCognitiveState(currentState.name);
         this.debugPanel.setFocusMode(this.focusMode ? this.focusMode.getCurrentMode() : 'standard');
-        const wpm = this.readingView ? this.readingView.getWpm() : 0;
+        const wpm = this.analytics ? this.analytics.getLastReadingSpeed() : 0;
         this.debugPanel.setWpm(wpm);
         this.debugPanel.setDimLevel(this.visualEffects ? this.visualEffects.dimIntensity : 0);
         this.debugPanel.setEffectsCount(this.visualEffects ? this.visualEffects._activeEffectCount : 0);
@@ -1071,7 +1085,7 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
             blockId: gazeBlock ? gazeBlock.blockId : null,
             blockIndex: blockIndex
         };
-        this.analytics.recordGazeSample(gazeData, currentState.name, currentState.confidence);
+        this.analytics.recordGazeSample(gazeData, currentState.name);
         this._lastAnalyticsTs = now;
     }
     
@@ -1361,6 +1375,17 @@ FocusFlow.showSessionReport = function() {
     SessionReport.show(this.analytics, this.readingView);
 };
 
+FocusFlow._updateReadingSpeedDisplay = function() {
+    if (!this.analytics) return;
+    const unit = this._t('metrics.wpm');
+    const sessionSpeed = this.analytics.getReadingSpeed();
+
+    const metric = document.getElementById('ff-metric-wpm');
+    if (metric) {
+        metric.textContent = sessionSpeed > 0 ? `${sessionSpeed} ${unit}` : '--';
+    }
+};
+
 /**
  * Update the UI dashboard with current state info
  */
@@ -1374,7 +1399,6 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     const iconEl = document.getElementById('ff-state-icon');
     const nameEl = document.getElementById('ff-state-name');
     const durEl = document.getElementById('ff-state-duration');
-    const confEl = document.getElementById('ff-state-confidence');
 
     const displayIcons = {
         Focus: '🧠',
@@ -1410,9 +1434,6 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     if (durEl) {
         durEl.textContent = (state.duration / 1000).toFixed(1);
     }
-    if (confEl) {
-        confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
-    }
 
     const strategyNameEl = document.getElementById('ff-strategy-name');
     const strategyDescEl = document.getElementById('ff-strategy-desc');
@@ -1436,17 +1457,15 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
         cardState.style.borderColor = color;
         cardState.style.boxShadow = `0 0 20px ${color}20`;
         if (nameEl) nameEl.style.color = color;
-        if (confEl) confEl.style.backgroundColor = color;
     }
     
     const summary = this.analytics.getSessionSummary();
     
-    const attnEl = document.getElementById('ff-metric-attention');
-    if (attnEl) attnEl.textContent = summary.attentionScore + '%';
-    
     const wpmEl = document.getElementById('ff-metric-wpm');
-    if (wpmEl && summary.readingSpeed > 0) {
-        wpmEl.textContent = summary.readingSpeed + ' ' + this._t('metrics.wpm');
+    if (wpmEl) {
+        wpmEl.textContent = summary.readingSpeed > 0
+            ? summary.readingSpeed + ' ' + this._t('metrics.wpm')
+            : '--';
     }
     
     const focusEl = document.getElementById('ff-metric-focus');
@@ -1456,27 +1475,13 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     if (regEl) regEl.textContent = summary.regressionRate + this._t('metrics.perMin');
     
     const durMetricEl = document.getElementById('ff-metric-duration');
-    if (durMetricEl) durMetricEl.textContent = summary.sessionDuration + ' ' + this._t('metrics.min');
+    if (durMetricEl) {
+        const mins = summary.sessionDuration ?? summary.duration ?? 0;
+        durMetricEl.textContent = mins + ' ' + this._t('metrics.min');
+    }
     
     const distEl = document.getElementById('ff-metric-distractions');
     if (distEl) distEl.textContent = summary.distractionCount;
-    
-    if (summary.insight) {
-        const insightEl = document.getElementById('ff-insight');
-        if (insightEl) {
-            insightEl.innerHTML = `${summary.insight.icon} ${summary.insight.message}`;
-        }
-    }
-    
-    const wpmBadge = document.getElementById('ff-wpm');
-    if (wpmBadge && summary.readingSpeed > 0) {
-        wpmBadge.textContent = summary.readingSpeed + ' ' + this._t('metrics.wpm');
-    }
-    
-    const scoreBadge = document.getElementById('ff-attention-score');
-    if (scoreBadge) {
-        scoreBadge.textContent = summary.attentionScore + '%';
-    }
 };
 
 /**
@@ -1497,6 +1502,63 @@ FocusFlow.toggleDebug = function() {
         debugPanel.style.display = this.config.debug ? 'block' : 'none';
     }
     console.log('[FocusFlow] Debug mode:', this.config.debug);
+};
+
+/**
+ * Reset cognitive state, interventions, and session data without stopping tracking.
+ */
+FocusFlow.resetSession = function(options) {
+    const silent = !!(options && options.silent);
+    if (!this._initialized) return;
+
+    if (this._resetInterventionMilestones) {
+        this._resetInterventionMilestones('Normal');
+    }
+    this._currentStateName = 'Normal';
+    this._lastStrategyId = 'none';
+    this._lastActivationKey = 'none';
+    this._distractionAlertShown = false;
+    this._lastStrugglePrompt = false;
+    this._wakeUpTriggered = false;
+    this._offScreenStart = 0;
+    this._gazeOffBlockStart = 0;
+    this._wpmTrackIndex = -1;
+    this._wpmTrackStart = 0;
+
+    if (this.perception) this.perception.reset();
+    if (this.cognition) this.cognition.reset();
+    if (this.decision) this.decision.reset();
+
+    const ctx = { focusFlow: this };
+    if (typeof InterventionExecutor !== 'undefined') {
+        InterventionExecutor.reset(ctx);
+    } else if (this.visualEffects) {
+        this.visualEffects.reset();
+    }
+
+    if (this._blockSummaryCache) this._blockSummaryCache = {};
+    if (this._summaryGenerationInProgress) this._summaryGenerationInProgress = new Set();
+    this._comprehensionCardBlock = -1;
+
+    if (this.analytics && typeof this.analytics.reset === 'function') {
+        this.analytics.reset();
+    }
+
+    const state = this.cognition ? this.cognition.getState() : null;
+    if (state && typeof this.updateDashboard === 'function') {
+        const strategy = this.decision && this.decision.interventionStrategy
+            ? this.decision.interventionStrategy.resolve(state)
+            : { id: 'none' };
+        this.updateDashboard(state, strategy, null);
+    }
+
+    if (!silent && this.visualEffects) {
+        const title = (typeof I18n !== 'undefined') ? I18n.t('reset.done') : 'Reset complete';
+        const hint = (typeof I18n !== 'undefined') ? I18n.t('reset.hint') : 'State and interventions cleared';
+        this.visualEffects.showPrompt('🔄', title, hint);
+    }
+
+    console.log('[FocusFlow] Session reset');
 };
 
 /**

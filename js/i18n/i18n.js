@@ -15,6 +15,8 @@ const I18n = {
 
             'btn.import': 'Import Text',
             'btn.reset': 'Reset',
+            'reset.done': 'Reset complete',
+            'reset.hint': 'Cognitive state and interventions cleared',
             'btn.theme.dark': 'Dark',
             'btn.theme.light': 'Light',
             'btn.clear': 'Clear',
@@ -230,6 +232,7 @@ const I18n = {
             'insight.encourage': "Great focus! You're reading consistently well.",
             'insight.paceInfo': "You're reading at a leisurely pace. That's perfectly fine for comprehension!",
             'insight.paceFast': "You're reading quite fast. Make sure you're absorbing the material!",
+            'insight.idle': 'Keep reading — personalized feedback will appear here.',
 
             'import.none': 'No readable text found. Please import .txt, .md, .docx, or similar formats.',
             'import.success': 'Imported {count} files ({size} KB)',
@@ -279,6 +282,8 @@ const I18n = {
 
             'btn.import': '导入文件',
             'btn.reset': '重置',
+            'reset.done': '已重置',
+            'reset.hint': '认知状态与干预效果已清除',
             'btn.theme.dark': '深色',
             'btn.theme.light': '浅色',
             'btn.clear': '清空',
@@ -494,6 +499,7 @@ const I18n = {
             'insight.encourage': '专注状态很好！你正在稳定地阅读。',
             'insight.paceInfo': '你读得比较从容，这对理解内容很有帮助！',
             'insight.paceFast': '你读得很快，请确保真正吸收了内容！',
+            'insight.idle': '继续阅读，个性化阅读建议会显示在这里。',
 
             'import.none': '未找到可读文本。请导入 .txt、.md、.docx 等格式。',
             'import.success': '已导入 {count} 个文件（{size} KB）',

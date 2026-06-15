@@ -6,7 +6,6 @@
  * 
  * Features:
  *   - Reading speed tracking (words per minute)
- *   - Attention score calculation
  *   - Session statistics (total time, reading time, distraction time)
  *   - Historical trend logging
  *   - Insight generation for personalized feedback
@@ -29,14 +28,7 @@ class AttentionAnalytics {
         // Reading metrics
         this.blocksRead = new Set();
         this.readingSpeedSamples = [];   // WPM samples
-        this.currentBlockStartTime = null;
-        this.currentBlockIndex = -1;
         this.wordCounts = {};            // blockIndex -> wordCount
-        
-        // Attention tracking
-        this.attentionSamples = [];      // Timestamped attention scores
-        this.currentSessionScore = 0;
-        this.attentionHistory = [];      // Rolling window of states
         
         // Gaze path tracking
         this.gazePath = [];              // { x, y, timestamp, blockId }
@@ -63,8 +55,10 @@ class AttentionAnalytics {
         
         // Sample timing for reading-time accumulation
         this._lastSampleTime = Date.now();
-        this._maxAttentionSamples = 500;
         this._maxReadingSpeedSamples = 100;
+        this._minBlockDwellForSpeedMs = 2500;
+        this._lastReadingSpeed = 0;
+        this._stickyInsight = null;
         
         // Auto-save interval
         this._saveInterval = setInterval(() => this._autoSave(), 30000);
@@ -80,12 +74,11 @@ class AttentionAnalytics {
     }
 
     /**
-     * Record a gaze sample with attention state
+     * Record a gaze sample with cognitive state
      * @param {Object} gazeData - { x, y, blockId, blockIndex }
-     * @param {string} state - Current state (reading/distracted/offScreen/etc)
-     * @param {number} attentionScore - Current attention level 0-1
+     * @param {string} state - Current cognitive state
      */
-    recordGazeSample(gazeData, state, attentionScore) {
+    recordGazeSample(gazeData, state) {
         const timestamp = Date.now();
 
         // Accumulate reading time between gaze samples
@@ -109,16 +102,6 @@ class AttentionAnalytics {
         // Limit gaze path buffer
         if (this.gazePath.length > 1000) {
             this.gazePath = this.gazePath.slice(-500);
-        }
-        
-        // Track attention
-        this.attentionSamples.push({
-            timestamp,
-            score: attentionScore,
-            state
-        });
-        if (this.attentionSamples.length > this._maxAttentionSamples) {
-            this.attentionSamples = this.attentionSamples.slice(-Math.floor(this._maxAttentionSamples * 0.6));
         }
         
         // Track block dwell time
@@ -148,29 +131,37 @@ class AttentionAnalytics {
             this.lastBlockIndex = gazeData.blockIndex;
         }
         
-        // Track reading speed (state machine uses 'Normal', not 'reading')
-        if (this._isReadingState(state) && gazeData.blockIndex !== undefined && gazeData.blockIndex >= 0) {
-            if (this.currentBlockIndex !== gazeData.blockIndex) {
-                if (this.currentBlockStartTime && this.currentBlockIndex >= 0) {
-                    const dwellTime = timestamp - this.currentBlockStartTime;
-                    const wc = this.wordCounts[this.currentBlockIndex] || 100;
-                    const wpm = (wc / dwellTime) * 60000;
-                    if (wpm > 0 && wpm < 1000) {
-                        this.readingSpeedSamples.push(wpm);
-                        if (this.readingSpeedSamples.length > this._maxReadingSpeedSamples) {
-                            this.readingSpeedSamples = this.readingSpeedSamples.slice(-Math.floor(this._maxReadingSpeedSamples * 0.6));
-                        }
-                    }
-                }
-                this.currentBlockIndex = gazeData.blockIndex;
-                this.currentBlockStartTime = timestamp;
-            }
-        }
-        
         // Track reading progress
         if (gazeData.blockIndex !== undefined && gazeData.blockIndex >= 0) {
             this.blocksRead.add(gazeData.blockIndex);
         }
+    }
+
+    /**
+     * Record reading speed when the user leaves a paragraph (block transition).
+     * @param {number} blockIndex - Paragraph that was just read
+     * @param {number} dwellMs - Time spent on that paragraph
+     * @param {string} state - Cognitive state during the transition
+     */
+    recordBlockSpeed(blockIndex, dwellMs, state) {
+        if (!this._isReadingState(state)) return;
+        if (blockIndex < 0 || dwellMs < this._minBlockDwellForSpeedMs) return;
+
+        const wc = this.wordCounts[blockIndex];
+        if (!wc) return;
+
+        const wpm = Math.round((wc / dwellMs) * 60000);
+        if (wpm <= 0 || wpm >= 1000) return;
+
+        this.readingSpeedSamples.push(wpm);
+        this._lastReadingSpeed = wpm;
+        if (this.readingSpeedSamples.length > this._maxReadingSpeedSamples) {
+            this.readingSpeedSamples = this.readingSpeedSamples.slice(-Math.floor(this._maxReadingSpeedSamples * 0.6));
+        }
+    }
+
+    getLastReadingSpeed() {
+        return this._lastReadingSpeed || 0;
     }
 
     /**
@@ -209,41 +200,12 @@ class AttentionAnalytics {
     }
 
     /**
-     * Calculate the current attention score (0-100)
-     * Based on recent gaze behavior and reading progress
-     * @returns {number} Attention score 0-100
-     */
-    getAttentionScore() {
-        const now = Date.now();
-        const window = 30000; // Last 30 seconds
-        
-        // Get recent samples
-        const recent = this.attentionSamples.filter(s => (now - s.timestamp) < window);
-        if (recent.length === 0) return 50;
-        
-        // Weighted average (more recent = higher weight)
-        let totalWeight = 0;
-        let weightedScore = 0;
-        
-        for (const sample of recent) {
-            const age = now - sample.timestamp;
-            const weight = Math.max(0, 1 - (age / window));
-            weightedScore += sample.score * weight;
-            totalWeight += weight;
-        }
-        
-        const avgScore = totalWeight > 0 ? (weightedScore / totalWeight) * 100 : 50;
-        return Math.round(Math.max(0, Math.min(100, avgScore)));
-    }
-
-    /**
      * Calculate reading speed in WPM
      * @returns {number} Words per minute
      */
     getReadingSpeed() {
-        if (this.readingSpeedSamples.length < 3) return 0;
+        if (this.readingSpeedSamples.length === 0) return 0;
         
-        // Use median to filter outliers
         const sorted = [...this.readingSpeedSamples].sort((a, b) => a - b);
         const median = sorted[Math.floor(sorted.length / 2)];
         return Math.round(median);
@@ -281,13 +243,11 @@ class AttentionAnalytics {
      */
     generateInsight() {
         const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
-        const attentionScore = this.getAttentionScore();
         const readingSpeed = this.getReadingSpeed();
         const focusRatio = this.getFocusRatio();
         const regressionRate = this.getRegressionRate();
         
-        // Low attention
-        if (attentionScore < 30) {
+        if (focusRatio < 0.3) {
             return {
                 message: t('insight.break'),
                 type: 'break_suggestion',
@@ -307,7 +267,7 @@ class AttentionAnalytics {
         }
         
         // Good progress encouragement
-        if (focusRatio > 0.7 && attentionScore > 70) {
+        if (focusRatio > 0.7) {
             return {
                 message: t('insight.encourage'),
                 type: 'encouragement',
@@ -339,6 +299,26 @@ class AttentionAnalytics {
     }
 
     /**
+     * Insight shown in the reading panel — persists until replaced by a new one.
+     */
+    getDisplayInsight() {
+        const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
+        const fresh = this.generateInsight();
+        if (fresh) {
+            this._stickyInsight = fresh;
+        }
+        if (this._stickyInsight) {
+            return this._stickyInsight;
+        }
+        return {
+            icon: '💡',
+            message: t('insight.idle'),
+            type: 'idle',
+            severity: 'low'
+        };
+    }
+
+    /**
      * Save the current session to localStorage
      */
     _autoSave() {
@@ -346,7 +326,6 @@ class AttentionAnalytics {
             const sessionData = {
                 date: new Date().toISOString(),
                 duration: this.getSessionDuration(),
-                attentionScore: this.getAttentionScore(),
                 readingSpeed: this.getReadingSpeed(),
                 focusRatio: this.getFocusRatio(),
                 distractionCount: this.distractionCount,
@@ -484,7 +463,6 @@ class AttentionAnalytics {
         return {
             generatedAt: new Date().toISOString(),
             durationMin: Math.round(summary.duration * 10) / 10,
-            attentionScore: summary.attentionScore,
             readingSpeed: summary.readingSpeed,
             focusRatio: summary.focusRatio,
             distractionCount: summary.distractionCount,
@@ -505,15 +483,16 @@ class AttentionAnalytics {
      * @returns {Object} Session summary
      */
     getSessionSummary() {
+        const sessionDuration = Math.round(this.getSessionDuration() * 10) / 10;
         return {
-            duration: Math.round(this.getSessionDuration() * 10) / 10,
-            attentionScore: this.getAttentionScore(),
+            duration: sessionDuration,
+            sessionDuration,
             readingSpeed: this.getReadingSpeed(),
             focusRatio: Math.round(this.getFocusRatio() * 100),
             distractionCount: this.distractionCount,
             blocksRead: this.blocksRead.size,
             regressionRate: Math.round(this.getRegressionRate() * 10) / 10,
-            insight: this.generateInsight()
+            insight: this.getDisplayInsight()
         };
     }
 
@@ -532,9 +511,8 @@ class AttentionAnalytics {
         this.currentDistractionStart = null;
         this.blocksRead = new Set();
         this.readingSpeedSamples = [];
-        this.currentBlockStartTime = null;
-        this.currentBlockIndex = -1;
-        this.attentionSamples = [];
+        this._lastReadingSpeed = 0;
+        this._stickyInsight = null;
         this.gazePath = [];
         this.regressionCount = 0;
         this.lastBlockIndex = -1;

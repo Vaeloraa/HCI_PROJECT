@@ -78,6 +78,7 @@
             <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">
                 📂 Import File
             </button>
+            <button id="btn-paragraph-debug" class="ff-btn ff-btn-secondary" onclick="toggleParagraphDebug()" data-i18n="btn.paragraphDebug" data-i18n-title="debug.paragraph.toggleTitle" title="Show paragraph split boundaries">¶ Debug</button>
             <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()" data-i18n="btn.reset">
                 🔄 Reset
             </button>
@@ -91,12 +92,6 @@
         <section class="ff-reading-panel" id="ff-reading-panel">
             <div class="ff-reading-header">
                 <h2 data-i18n="reading.area">📖 Reading Area</h2>
-                <div class="ff-reading-stats">
-                    <button id="btn-paragraph-debug" class="ff-btn ff-btn-secondary ff-btn-xs" onclick="toggleParagraphDebug()" data-i18n="btn.paragraphDebug" data-i18n-title="debug.paragraph.toggleTitle" title="Show paragraph split boundaries">¶ Debug</button>
-                    <span class="ff-reading-stat" id="ff-wpm">-- wpm</span>
-                    <span class="ff-reading-stat" id="ff-attention-score">--%</span>
-                    <span class="ff-reading-stat" id="ff-insight"></span>
-                </div>
             </div>
             
             <!-- The reading content rendered by ReadingView -->
@@ -135,7 +130,6 @@
             <div class="ff-card ff-card-state" id="card-state">
                 <div class="ff-card-header">
                     <h2 data-i18n="state.title">🧠 State</h2>
-                    <span class="ff-badge" id="ff-state-confidence">95%</span>
                 </div>
                 <div class="ff-card-body">
                     <div class="ff-state-compact">
@@ -167,10 +161,6 @@
                     <h2 data-i18n="metrics.title">📊 Attention Metrics</h2>
                 </div>
                 <div class="ff-card-body ff-metrics-grid" id="ff-metrics-grid">
-                    <div class="ff-metric-item">
-                        <span class="ff-metric-label" data-i18n="metrics.attention">🎯 Attention</span>
-                        <span class="ff-metric-value" id="ff-metric-attention">0%</span>
-                    </div>
                     <div class="ff-metric-item">
                         <span class="ff-metric-label" data-i18n="metrics.speed">📖 Speed</span>
                         <span class="ff-metric-value" id="ff-metric-wpm">0</span>
@@ -218,47 +208,6 @@
                             <div class="ff-goal-progress-fill" id="ff-goal-bar" style="width:0%"></div>
                         </div>
                         <div class="ff-goal-empty" id="ff-goal-empty" data-i18n="goal.empty">Click Set to define a reading goal</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Multi-modal Features - compact 2-column -->
-            <div class="ff-card ff-card-features">
-                <div class="ff-card-header">
-                    <h2 data-i18n="features.title">📡 Perception Features</h2>
-                </div>
-                <div class="ff-card-body ff-features-grid" id="ff-features-grid">
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">👤 Face</span>
-                        <span class="ff-feature-value" id="ff-f-face">✅</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">🔄 Head</span>
-                        <span class="ff-feature-value" id="ff-f-pose">Center</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">👁️ Gaze</span>
-                        <span class="ff-feature-value" id="ff-f-region">Center</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">🖱️ Mouse</span>
-                        <span class="ff-feature-value" id="ff-f-mouse">💤</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">📜 Scroll</span>
-                        <span class="ff-feature-value" id="ff-f-scroll">⏸️</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">⏱️ Dwell</span>
-                        <span class="ff-feature-value" id="ff-f-dwell">0.0s</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">📊 Dispersion</span>
-                        <span class="ff-feature-value" id="ff-f-dispersion">0</span>
-                    </div>
-                    <div class="ff-feature-item">
-                        <span class="ff-feature-label">🔄 Interaction</span>
-                        <span class="ff-feature-value" id="ff-f-interaction">✅</span>
                     </div>
                 </div>
             </div>
@@ -794,6 +743,7 @@
                         </div>
                         <input type="file" id="ff-file-input" accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.csv,.json,.xml,.html,.cpp,.c,.h,.py,.js,.ts,.css,.java,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg" style="display:none" multiple onchange="handleFileImport(event)">
                         <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">Import Text</button>
+                        <button id="btn-paragraph-debug" class="ff-btn ff-btn-secondary" onclick="toggleParagraphDebug()" data-i18n="btn.paragraphDebug" data-i18n-title="debug.paragraph.toggleTitle" title="Show paragraph split boundaries">¶ Debug</button>
                         <button id="btn-session-report" class="ff-btn ff-btn-secondary" onclick="showSessionReport()" data-i18n="btn.sessionReport">Session Report</button>
                         <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()" data-i18n="btn.reset">Reset</button>
                     </div>
@@ -915,6 +865,7 @@
                 const resolved = FocusFlow.decision && FocusFlow.decision.interventionStrategy
                     ? FocusFlow.decision.interventionStrategy.resolve(state)
                     : (FocusFlow.decision?.currentDecision?.strategy || { id: 'none' });
+                if (FocusFlow.analytics) FocusFlow.analytics._stickyInsight = null;
                 FocusFlow.updateDashboard(state, resolved, null);
             }
 
@@ -1328,6 +1279,7 @@
         function stopDemo() {
             isDemoRunning = false;
             FocusFlow._simulationActive = false;
+            FocusFlow.config.demoMode = false;
             document.getElementById('btn-toggle-demo').textContent = '🖱️ Start Demo Mode';
             document.getElementById('btn-toggle-demo').className = 'ff-btn ff-btn-primary';
             
@@ -1336,8 +1288,8 @@
                 demoInterval = null;
             }
             
-            if (FocusFlow.shutdown) {
-                FocusFlow.shutdown();
+            if (FocusFlow.resetSession) {
+                FocusFlow.resetSession({ silent: true });
             }
             
             log('⏹️', 'Demo stopped');
@@ -1539,7 +1491,6 @@
             // Update timeline
             timelineHistory.push({
                 state: state.name,
-                confidence: detail.probabilities[state.name],
                 time: new Date().toLocaleTimeString()
             });
             if (timelineHistory.length > MAX_TIMELINE) {
@@ -1548,7 +1499,7 @@
             
             // Log
             const prevName = detail.previousState ? detail.previousState.name : 'None';
-            log('🔄', `${prevName} → ${state.name} (${(detail.probabilities[state.name] * 100).toFixed(0)}%)`);
+            log('🔄', `${prevName} → ${state.name}`);
         }
 
         // ====== UI UPDATE ======
@@ -1585,16 +1536,12 @@
             
             // Update timeline
             updateTimeline();
-            
-            // Update simulated features
-            updateFeatureDisplay();
         }
 
         function updateStateCardStyle(state) {
             const iconEl = document.getElementById('ff-state-icon');
             const nameEl = document.getElementById('ff-state-name');
             const durEl = document.getElementById('ff-state-duration');
-            const confEl = document.getElementById('ff-state-confidence');
 
             if (!state) return;
 
@@ -1628,10 +1575,6 @@
             if (iconEl) iconEl.textContent = icons[displayState] || '🧠';
             if (nameEl) nameEl.style.color = colors[displayState] || '#fff';
             if (durEl) durEl.textContent = (state.duration / 1000).toFixed(1);
-            if (confEl) {
-                confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
-                confEl.style.backgroundColor = colors[displayState] || '#666';
-            }
 
             const cardState = document.getElementById('card-state');
             if (cardState) {
@@ -1693,7 +1636,6 @@
                         <div class="ff-timeline-content">
                             <span class="ff-timeline-state" style="color: ${colors[entry.state] || '#666'}">${entry.state}</span>
                             <span class="ff-timeline-time">${entry.time}</span>
-                            <span class="ff-timeline-conf">${(entry.confidence * 100).toFixed(0)}%</span>
                         </div>
                     </div>
                 `;
@@ -1701,66 +1643,6 @@
             
             container.innerHTML = html;
             container.scrollTop = container.scrollHeight;
-        }
-
-        // ====== FEATURES DISPLAY ======
-        function updateFeatureDisplay() {
-            if (isDemoRunning) {
-                document.getElementById('ff-f-face').textContent = simState.facePresent ? '✅ Detected' : '❌ Not detected';
-                document.getElementById('ff-f-face').style.color = simState.facePresent ? '#4CAF50' : '#F44336';
-                document.getElementById('ff-f-pose').textContent = 'Center';
-                document.getElementById('ff-f-region').textContent = 'center-center';
-                document.getElementById('ff-f-mouse').textContent = simState.mouseMoving ? '🖱️ Moving' : '💤 Idle';
-                document.getElementById('ff-f-mouse').style.color = simState.mouseMoving ? '#4CAF50' : '#FF9800';
-                document.getElementById('ff-f-scroll').textContent = simState.isPaused ? '⏸️ Paused' :
-                    (simState.scrollVelocity > 0 ? '📜 Scrolling' : '⏸️ Paused');
-                document.getElementById('ff-f-scroll').style.color = simState.scrollVelocity > 0 ? '#4CAF50' : '#FF9800';
-                document.getElementById('ff-f-dwell').textContent = (simState.dwellTime / 1000).toFixed(1) + 's';
-                document.getElementById('ff-f-dwell').style.color = simState.dwellTime > 8000 ? '#F44336' : '#4CAF50';
-                document.getElementById('ff-f-dispersion').textContent = simState.facePresent ?
-                    (50 + Math.random() * 100).toFixed(0) : (300 + Math.random() * 200).toFixed(0);
-                document.getElementById('ff-f-interaction').textContent = simState.interactionActive ? '✅ Active' : '❌ No interaction';
-                document.getElementById('ff-f-interaction').style.color = simState.interactionActive ? '#4CAF50' : '#F44336';
-                return;
-            }
-
-            if (!FocusFlow.perception || typeof FocusFlow._enrichFeaturesForCognition !== 'function') return;
-            const f = FocusFlow._enrichFeaturesForCognition(FocusFlow.perception.getFeatures());
-
-            document.getElementById('ff-f-face').textContent = f.faceTracking
-                ? (f.facePresent ? '✅ Detected' : '❌ Not detected')
-                : '—';
-            document.getElementById('ff-f-face').style.color = f.facePresent ? '#4CAF50' : '#94a3b8';
-
-            document.getElementById('ff-f-pose').textContent = f.currentRegion || '—';
-
-            if (f.onReadingContent) {
-                document.getElementById('ff-f-region').textContent = '¶' + (f.readingBlockIndex + 1);
-                document.getElementById('ff-f-region').style.color = '#4CAF50';
-            } else if (f.pointerInReadingPanel) {
-                document.getElementById('ff-f-region').textContent = 'In panel';
-                document.getElementById('ff-f-region').style.color = '#FF9800';
-            } else {
-                document.getElementById('ff-f-region').textContent = 'Away';
-                document.getElementById('ff-f-region').style.color = '#F44336';
-            }
-
-            document.getElementById('ff-f-mouse').textContent = f.isMoving ? '🖱️ Moving' : '💤 Idle';
-            document.getElementById('ff-f-mouse').style.color = f.isMoving ? '#4CAF50' : '#FF9800';
-
-            document.getElementById('ff-f-scroll').textContent = f.isScrolling ? '📜 Scrolling' : '⏸️ Paused';
-            document.getElementById('ff-f-scroll').style.color = f.isScrolling ? '#4CAF50' : '#FF9800';
-
-            document.getElementById('ff-f-dwell').textContent = (f.dwellTime / 1000).toFixed(1) + 's';
-            document.getElementById('ff-f-dwell').style.color = f.dwellTime > 8000 ? '#F44336' : '#4CAF50';
-
-            document.getElementById('ff-f-dispersion').textContent = String(Math.round(f.dispersion || 0));
-
-            const ctxLabel = f.onReadingContent ? '📖 On paragraph'
-                : (f.pointerInReadingPanel ? '👁️ In reading area' : '🚶 Left reading');
-            document.getElementById('ff-f-interaction').textContent = ctxLabel;
-            document.getElementById('ff-f-interaction').style.color = f.onReadingContent ? '#4CAF50'
-                : (f.pointerInReadingPanel ? '#FF9800' : '#F44336');
         }
 
         // ====== LOGGING ======
@@ -2062,22 +1944,25 @@
 
         // ====== RESET ======
         window.resetAll = function() {
-            stopDemo();
-            stopCamera();
-            
-            if (FocusFlow.perception) FocusFlow.perception.reset();
-            if (FocusFlow.cognition) FocusFlow.cognition.reset();
-            if (FocusFlow.decision) FocusFlow.decision.reset();
-            if (typeof InterventionExecutor !== 'undefined') {
-                InterventionExecutor.reset({ focusFlow: FocusFlow });
+            if (isDemoRunning) {
+                isDemoRunning = false;
+                FocusFlow._simulationActive = false;
+                FocusFlow.config.demoMode = false;
+                if (demoInterval) {
+                    clearInterval(demoInterval);
+                    demoInterval = null;
+                }
+                const demoBtn = document.getElementById('btn-toggle-demo');
+                if (demoBtn) {
+                    demoBtn.textContent = '🖱️ Start Demo Mode';
+                    demoBtn.className = 'ff-btn ff-btn-primary';
+                }
             }
-            FocusFlow._lastStrategyId = 'none';
-            FocusFlow._lastActivationKey = 'none';
-            if (FocusFlow._blockSummaryCache) FocusFlow._blockSummaryCache = {};
-            if (FocusFlow._summaryGenerationInProgress) FocusFlow._summaryGenerationInProgress = new Set();
-            if (FocusFlow.visualEffects) FocusFlow.visualEffects.hideComprehensionCard();
-            FocusFlow._comprehensionCardBlock = -1;
-            
+
+            if (typeof FocusFlow.resetSession === 'function') {
+                FocusFlow.resetSession();
+            }
+
             timelineHistory = [];
             simState = {
                 phase: 0, phaseTime: 0,
@@ -2089,12 +1974,15 @@
             };
             currentScenario = 0;
             scenarioTime = 0;
-            
-            document.getElementById('ff-timeline').innerHTML = '<div class="ff-timeline-empty">Waiting for data...</div>';
-            document.getElementById('ff-log').innerHTML = '';
-            logEntries = 0;
-            
-            log('🔄', 'System reset');
+
+            const timelineEl = document.getElementById('ff-timeline');
+            if (timelineEl) {
+                timelineEl.innerHTML = '<div class="ff-timeline-empty">Waiting for data...</div>';
+            }
+
+            log('🔄', typeof I18n !== 'undefined' ? I18n.t('reset.done') : 'System reset');
+
+            if (typeof updateUI === 'function') updateUI();
         };
 
         // Handle window close

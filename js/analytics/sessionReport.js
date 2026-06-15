@@ -25,7 +25,6 @@ const SessionReport = {
                 <div class="ff-dialog-body">
                     <div class="ff-report-stats">
                         ${this._statCard(t('report.duration'), `${report.durationMin} min`)}
-                        ${this._statCard(t('report.attention'), `${report.attentionScore}%`)}
                         ${this._statCard(t('report.distractions'), String(report.distractionCount))}
                         ${this._statCard(t('report.recovery'), report.avgRecoverySec > 0 ? `${report.avgRecoverySec}s` : '--')}
                     </div>

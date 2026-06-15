@@ -52,8 +52,8 @@ class DecisionModule {
         // 3. Get user profile for personalized decision
         const profile = userProfile || this.adaptiveThreshold.getProfile();
 
-        // 4. Select intervention strategy
-        const strategy = this.interventionStrategy.select(state, features, profile);
+        // 4. Resolve intervention strategy (always matches cognitive state)
+        const strategy = this.interventionStrategy.resolve(state);
 
         // 5. Build decision object
         const decision = {
@@ -70,7 +70,7 @@ class DecisionModule {
                 strugglingThreshold: profile.strugglingThreshold
             },
             timestamp: now,
-            escalationLevel: this._getEscalationLevel()
+            escalationLevel: strategy.tier || 'low'
         };
 
         this.currentDecision = decision;
@@ -122,7 +122,7 @@ class DecisionModule {
     }
 
     /**
-     * Check if state has improved (e.g., from Distracted to Normal/Recovering)
+     * Check if state has improved (e.g., from Distracted to Normal)
      * @param {Object} before
      * @param {Object} after
      * @returns {boolean}
@@ -133,8 +133,7 @@ class DecisionModule {
         const stateRank = {
             'Distracted': 0,
             'Struggling': 1,
-            'Recovering': 2,
-            'Normal': 3
+            'Normal': 2
         };
 
         const beforeRank = stateRank[before.name] || 0;

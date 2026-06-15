@@ -441,6 +441,20 @@ class ReadingView {
     }
 
     /**
+     * Ensure the gaze cursor exists and is attached to document.body.
+     */
+    ensureGazeCursor() {
+        if (!this._gazeCursor) {
+            this._buildGazeCursor();
+            return this._gazeCursor;
+        }
+        if (!this._gazeCursor.parentNode || this._gazeCursor.parentNode !== document.body) {
+            document.body.appendChild(this._gazeCursor);
+        }
+        return this._gazeCursor;
+    }
+
+    /**
      * Build the gaze cursor element with enhanced visual feedback
      * Includes an outer glow ring and inner dot for layered depth
      */
@@ -485,34 +499,10 @@ class ReadingView {
      * @param {number} y 
      */
     updateGazeCursor(x, y) {
-        if (!this._gazeCursor) return;
-        if (this.config && (this.config.showGazeDot === false || this.config.trackingMode === 'mouse')) {
+        // Gaze dot is rendered by WebGazer (#webgazerGazeDot), not a custom cursor.
+        if (this._gazeCursor) {
             this.hideGazeCursor();
-            return;
         }
-        
-        this._gazeCursor.style.left = `${x}px`;
-        this._gazeCursor.style.top = `${y}px`;
-        this._gazeCursor.style.opacity = '1';
-        
-        // Subtle scale pulse based on motion speed for organic feel
-        if (this._lastGazeX !== undefined && this._lastGazeY !== undefined) {
-            const dx = x - this._lastGazeX;
-            const dy = y - this._lastGazeY;
-            const speed = Math.sqrt(dx * dx + dy * dy);
-            if (speed > 2) {
-                const pulse = Math.min(1.25, 1 + speed * 0.004);
-                this._gazeCursor.style.transform = `translate(-50%, -50%) scale(${pulse})`;
-                clearTimeout(this._gazePulseTimeout);
-                this._gazePulseTimeout = setTimeout(() => {
-                    if (this._gazeCursor) {
-                        this._gazeCursor.style.transform = 'translate(-50%, -50%) scale(1)';
-                    }
-                }, 120);
-            }
-        }
-        this._lastGazeX = x;
-        this._lastGazeY = y;
     }
 
     /**
@@ -642,13 +632,6 @@ class ReadingView {
             this._currentBlockWordCount = text.split(/\s+/).filter(w => w.length > 0).length;
             this._blockStartTime = Date.now();
         }
-        
-        // Update gaze cursor position to block center
-        if (blockIndex >= 0 && blockIndex < this.blockElements.length) {
-            const el = this.blockElements[blockIndex];
-            const rect = el.getBoundingClientRect();
-            this.updateGazeCursor(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        }
     }
 
     /**
@@ -662,9 +645,10 @@ class ReadingView {
 
     /**
      * Apply adaptive typography based on cognitive state
-     * @param {string} state - 'Normal' | 'Struggling' | 'Distracted' | 'Recovering'
+     * @param {string} state - 'Normal' | 'Struggling' | 'Distracted'
      */
     applyAdaptiveTypography(state) {
+        if (!this.config || this.config.adaptiveTypography === false) return;
         this._cognitiveState = state;
         
         let fontSize = this._baseFontSize;
@@ -675,29 +659,19 @@ class ReadingView {
         
         switch (state) {
             case 'Struggling':
-                // Increase readability for struggling users
-                fontSize = this._baseFontSize + 3;
-                lineHeight = this._baseLineHeight + 0.3;
-                letterSpacing = this._baseLetterSpacing + 0.2;
-                paragraphGap = this._baseParagraphGap + 4;
+                fontSize = this._baseFontSize + 2;
+                lineHeight = this._baseLineHeight + 0.2;
+                letterSpacing = this._baseLetterSpacing + 0.15;
+                paragraphGap = this._baseParagraphGap + 3;
                 fontWeight = 500;
                 break;
                 
             case 'Distracted':
-                // Slightly larger, more spacing to re-engage
-                fontSize = this._baseFontSize + 2;
-                lineHeight = this._baseLineHeight + 0.2;
-                letterSpacing = this._baseLetterSpacing + 0.1;
-                paragraphGap = this._baseParagraphGap + 3;
-                fontWeight = 450;
-                break;
-                
-            case 'Recovering':
-                // Transitional - slightly enhanced but calming
                 fontSize = this._baseFontSize + 1;
-                lineHeight = this._baseLineHeight + 0.1;
+                lineHeight = this._baseLineHeight + 0.15;
+                letterSpacing = this._baseLetterSpacing + 0.08;
                 paragraphGap = this._baseParagraphGap + 2;
-                fontWeight = 425;
+                fontWeight = 450;
                 break;
                 
             default: // Normal

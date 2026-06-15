@@ -58,13 +58,12 @@ FocusFlow.config = {
     calibrationRequired: true,
     
     // Member B config
+    adaptiveTypography: false,       // Disabled — keep reading font size fixed
     highlightIntensity: 0.15,
     dimIntensity: 0.35,
     dimDelay: 3000,
     
-    // Member C config — dwell-triggered comprehension assist (not keyword cards)
-    dwellForSummary: 10000,
-    summaryBlockConfirmMs: 1500,
+    // Member C config — comprehension assist fires on Struggling state
     summaryMaxSentences: 2,
     llmApiUrl: '/api/summarize',
     llmStatusUrl: '/api/llm/status',
@@ -81,18 +80,22 @@ FocusFlow._maxGazeHistory = 10;
 FocusFlow._lastBlockIndex = -1;
 FocusFlow._blockDwellStart = 0;
 FocusFlow._blockChangeTime = 0;
-FocusFlow._autoTriggeredForBlock = new Set();
 FocusFlow._blockSummaryCache = {};
 FocusFlow._paragraphSummaries = {};
 FocusFlow._comprehensionCardBlock = -1;
-FocusFlow._assistCandidateBlock = -1;
-FocusFlow._assistCandidateSince = 0;
-FocusFlow._assistDwellBlock = -1;
-FocusFlow._assistDwellStart = 0;
-FocusFlow._assistPrefetchStartedFor = new Set();
+FocusFlow._lastStrategyId = 'none';
+FocusFlow._lastActivationKey = 'none';
+FocusFlow._interventionMilestones = {
+    stateKey: '',
+    distracted6: false,
+    distracted12: false,
+    struggling8: false
+};
 
 FocusFlow._currentStateName = 'Normal';
 FocusFlow._lastGazeTime = 0;
+FocusFlow._lastGazeX = NaN;
+FocusFlow._lastGazeY = NaN;
 FocusFlow._offScreenStart = 0;
 FocusFlow._wakeUpTriggered = false;
 FocusFlow._lastDistractionPromptTime = 0;
@@ -109,14 +112,19 @@ FocusFlow._demoMouseHandler = null;
 FocusFlow._demoScrollHandler = null;
 FocusFlow._webGazerStarted = false;
 FocusFlow._webGazerStarting = false;
+FocusFlow._lastAnalyticsTs = 0;
+FocusFlow._analyticsIntervalMs = 500;
 FocusFlow._lastDashboardUpdateTs = 0;
 FocusFlow._dashboardUpdateIntervalMs = 200;
 FocusFlow._lastPipelineRunTs = 0;
-FocusFlow._pipelineIntervalMs = 33; // ~30 FPS max processing
+FocusFlow._pipelineIntervalMs = 100; // ~10 FPS — leave CPU for WebGazer face mesh
+FocusFlow._calibrationLastGaze = null;
 FocusFlow._summaryGenerationInProgress = new Set();
 FocusFlow._allBlockTexts = [];
+FocusFlow._simulationActive = false;
 FocusFlow._initialized = false;
 FocusFlow._calibrationDone = false;
+FocusFlow._calibrationInProgress = false;
 FocusFlow._cameraGateVisible = false;
 FocusFlow._cameraStartupInProgress = false;
 
@@ -144,7 +152,7 @@ FocusFlow.init = async function() {
 
     // 3. Initialize Member A: Cognitive State Machine
     this.cognition = new StateMachine(this.config);
-    console.log('[FocusFlow] ✅ Member A - Cognitive State Machine loaded');
+    console.log('[FocusFlow] ✅ Member A - Cognitive State Machine loaded (v' + this.cognition.version + ')');
 
     // 4. Initialize Member A: Decision Module
     this.decision = new DecisionModule(this.config);
@@ -185,6 +193,18 @@ FocusFlow.init = async function() {
         if (this.analytics && detail.currentState) {
             this.analytics.recordStateTransition(detail.previousState, detail.currentState);
         }
+        if (!this._initialized || !this.decision) return;
+        // Gaze mode: interventions are driven by onGazeData — avoid duplicate work on state change.
+        if (this.config.trackingMode === 'gaze' && this.config.useWebGazer && !this.config.demoMode) {
+            return;
+        }
+        const state = detail.currentState;
+        const features = detail.features || {};
+        let gazeBlock = null;
+        if (this.readingView && Number.isFinite(this._lastGazeX) && Number.isFinite(this._lastGazeY)) {
+            gazeBlock = this.readingView.getBlockAtGaze(this._lastGazeX, this._lastGazeY);
+        }
+        this._applyInterventions(state, null, gazeBlock, features);
     });
 
     // 9. Input tracking — mouse by default; camera only after user enables eye tracking.
@@ -302,9 +322,16 @@ FocusFlow._finishCameraStartup = async function() {
         } catch (err) {
             console.warn('[FocusFlow] Calibration failed, continuing:', err);
         }
+        if (this.config.trackingMode !== 'gaze') return;
     }
 
     this._setupGazeListener();
+
+    if (typeof window.mountWebGazerPreview === 'function') {
+        window.mountWebGazerPreview();
+    }
+    this._ensureWebGazerGazeDot();
+    setTimeout(() => this._ensureWebGazerGazeDot(), 400);
 };
 
 /**
@@ -324,6 +351,7 @@ FocusFlow.enableCameraTracking = async function() {
         this.stopMouseTracking();
         this.config.useWebGazer = true;
         this.config.demoMode = false;
+        this._calibrationDone = false;
 
         const started = await this._tryStartEyeTracking();
         if (!started) {
@@ -400,25 +428,44 @@ FocusFlow._hideCameraGate = function() {
 };
 
 /**
- * Run the 9-point calibration procedure.
- * This asks the user to look at 9 points on screen to calibrate WebGazer.
+ * Run the 9-point calibration procedure (WebGazer handles gaze dot).
  */
 FocusFlow._runCalibration = function() {
     return new Promise((resolve) => {
         console.log('[FocusFlow] 🎯 Starting 9-point calibration...');
-        
+        this._calibrationInProgress = true;
+        this._calibrationLastGaze = null;
+
+        if (window.webgazer) {
+            try {
+                if (typeof webgazer.setGazeListener === 'function') {
+                    webgazer.setGazeListener((data) => {
+                        if (!this._calibrationInProgress || !data) return;
+                        if (Number.isFinite(data.x) && Number.isFinite(data.y)) {
+                            this._calibrationLastGaze = { x: data.x, y: data.y };
+                        }
+                    });
+                }
+                if (typeof webgazer.showPredictionPoints === 'function') {
+                    webgazer.showPredictionPoints(true);
+                }
+                if (typeof webgazer.resume === 'function') {
+                    webgazer.resume();
+                }
+            } catch (e) {}
+        }
+
         this.calibration = new CalibrationManager(this.config);
-        
+
         this.calibration.start(
-            // onComplete callback
             (calibrationData) => {
+                this._calibrationInProgress = false;
+
                 if (calibrationData) {
-                    // Calibration completed
                     this.calibrationData = calibrationData;
                     const results = this.calibration.getResults();
-                    
+
                     if (results) {
-                        // Calculate per-point offsets
                         const offsets = results.points.map(p => ({
                             targetX: p.targetX,
                             targetY: p.targetY,
@@ -427,41 +474,47 @@ FocusFlow._runCalibration = function() {
                             dx: p.averageX - p.targetX,
                             dy: p.averageY - p.targetY
                         }));
-                        
-                        // Compute overall offset (average offset across all 9 points)
-                        // This is used as a global correction
+
                         this.gazeOffsetX = -results.averageOffsetX;
                         this.gazeOffsetY = -results.averageOffsetY;
-                        
-                        // Store detailed offsets per region for more precise correction
                         this._calibrationOffsets = offsets;
-                        
+
                         console.log('[FocusFlow] ✅ Calibration complete!');
                         console.log(`[FocusFlow]   Accuracy: ${results.accuracy.toFixed(1)}px average error`);
                         console.log(`[FocusFlow]   Offset: (${this.gazeOffsetX.toFixed(1)}, ${this.gazeOffsetY.toFixed(1)})`);
-                        
-                        // Show success message
+                    }
+
+                    this._calibrationDone = true;
+
+                    if (this.visualEffects) {
+                        const accuracy = results ? results.accuracy.toFixed(0) : '?';
                         this.visualEffects.showPrompt(
                             '🎯',
                             this._t('calibration.complete.title'),
-                            this._t('calibration.complete.sub', { accuracy: results.accuracy.toFixed(0) })
+                            this._t('calibration.complete.sub', { accuracy })
                         );
                     }
-                    this._calibrationDone = true;
                 } else {
-                    // Calibration was skipped
-                    console.log('[FocusFlow] ⏭️ Calibration skipped, using raw gaze data');
-                    this.visualEffects.showPrompt(
-                        '🖱️',
-                        this._t('calibration.skipped.title'),
-                        this._t('calibration.skipped.sub')
-                    );
+                    console.log('[FocusFlow] ⏭️ Calibration skipped, switching to mouse mode');
+                    this.switchToMouseTracking('calibration skipped');
+                    this._calibrationDone = true;
+
+                    if (this.visualEffects) {
+                        this.visualEffects.showPrompt(
+                            '🖱️',
+                            this._t('calibration.skipped.title'),
+                            this._t('calibration.skipped.sub')
+                        );
+                    }
                 }
-                this._calibrationDone = true;
-                
-                resolve();
+
+                if (typeof window.applyGazeDotVisibility === 'function') {
+                    window.applyGazeDotVisibility();
+                }
+                this._ensureWebGazerGazeDot();
+
+                resolve(calibrationData);
             },
-            // onProgress callback
             (current, total) => {
                 const pct = Math.round((current / total) * 100);
                 console.log(`[FocusFlow] Calibration progress: ${current + 1}/${total} (${pct}%)`);
@@ -536,8 +589,8 @@ FocusFlow.startWebGazer = async function(options) {
                 .setRegression('ridge')
                 .saveDataAcrossSessions(true)
                 .showVideo(true)
-                .showFaceOverlay(true)
-                .showFaceFeedbackBox(true)
+                .showFaceOverlay(false)
+                .showFaceFeedbackBox(false)
                 .showVideoPreview(true)
                 .showPredictionPoints(this.config.showGazeDot && this.config.trackingMode !== 'mouse')
                 .begin()
@@ -547,6 +600,9 @@ FocusFlow.startWebGazer = async function(options) {
                     this.config.demoMode = false;
                     this.config.useWebGazer = true;
                     this.config.trackingMode = 'gaze';
+                    if (typeof window.applyGazeDotVisibility === 'function') {
+                        window.applyGazeDotVisibility();
+                    }
                     this._announceTrackingMode('gaze');
                     console.log('[FocusFlow] ✅ WebGazer started successfully');
                     resolve(true);
@@ -597,6 +653,8 @@ FocusFlow._announceTrackingMode = function(mode, reason) {
 };
 
 FocusFlow.switchToMouseTracking = function(reason) {
+    this._calibrationInProgress = false;
+
     this._webGazerStarted = false;
     this._webGazerStarting = false;
 
@@ -622,23 +680,80 @@ FocusFlow.switchToMouseTracking = function(reason) {
 
 
 /**
- * Set up the post-calibration gaze listener with smoothing and offset correction
+ * Keep WebGazer #webgazerGazeDot visible (lives on document.body).
+ */
+FocusFlow._ensureWebGazerGazeDot = function() {
+    const isGaze = this.config.trackingMode === 'gaze';
+    const show = this.config.showGazeDot !== false && isGaze;
+
+    const custom = document.getElementById('ff-gaze-cursor');
+    if (custom) {
+        custom.style.display = 'none';
+        custom.style.visibility = 'hidden';
+        custom.style.opacity = '0';
+    }
+
+    if ((!show || !isGaze) && this.visualEffects) {
+        this.visualEffects.hideGazeGlow();
+    }
+
+    try {
+        if (window.webgazer) {
+            if (typeof webgazer.showPredictionPoints === 'function') {
+                webgazer.showPredictionPoints(show);
+            }
+            if (show && typeof webgazer.resume === 'function') {
+                webgazer.resume();
+            }
+        }
+    } catch (e) {}
+
+    const dot = document.getElementById('webgazerGazeDot');
+    if (!dot) return;
+
+    if (!dot.parentNode || dot.parentNode !== document.body) {
+        document.body.appendChild(dot);
+    }
+
+    if (show) {
+        dot.style.display = 'block';
+        dot.style.visibility = 'visible';
+        dot.style.opacity = '0.7';
+        dot.style.position = 'fixed';
+        dot.style.zIndex = '99999';
+        dot.style.pointerEvents = 'none';
+    } else {
+        dot.style.display = 'none';
+    }
+};
+
+/**
+ * Set up the post-calibration gaze listener with smoothing and offset correction.
+ * Gaze position dot is rendered by WebGazer (showPredictionPoints).
  */
 FocusFlow._setupGazeListener = function() {
     if (!window.webgazer) return;
-    
+
     webgazer.setGazeListener((data, elapsedTime) => {
         if (data == null) return;
-        
-        // Apply calibration offset correction
+
         const correctedData = this._applyCalibration(data);
-        
-        // Apply smoothing
         const smoothedData = this._smoothGaze(correctedData);
-        
+
+        this._lastGazeX = smoothedData.x;
+        this._lastGazeY = smoothedData.y;
+
+        const now = performance.now();
+        if ((now - this._lastPipelineRunTs) < this._pipelineIntervalMs) {
+            return;
+        }
+        this._lastPipelineRunTs = now;
+
         this.onGazeData(smoothedData, elapsedTime);
     });
-    
+
+    this._ensureWebGazerGazeDot();
+
     console.log('[FocusFlow] 👁️ Post-calibration gaze listener active');
 };
 
@@ -734,7 +849,6 @@ FocusFlow.startMouseTracking = function() {
     this.config.demoMode = true;
     this.config.useWebGazer = false;
     this.config.trackingMode = 'mouse';
-
     if (this._demoMouseHandler) {
         return;
     }
@@ -769,18 +883,79 @@ FocusFlow.startMouseTracking = function() {
 };
 
 /**
+ * Attach reading-area context so states distinguish "reading pause" from "left the page".
+ */
+FocusFlow._enrichFeaturesForCognition = function(features) {
+    if (!features) return features;
+
+    let onReadingContent = false;
+    let readingBlockIndex = -1;
+    let pointerInReadingPanel = false;
+
+    const x = this._lastGazeX;
+    const y = this._lastGazeY;
+    const readingEl = document.getElementById('ff-reading-content');
+
+    if (readingEl && Number.isFinite(x) && Number.isFinite(y)) {
+        const r = readingEl.getBoundingClientRect();
+        pointerInReadingPanel = y >= r.top && y <= r.bottom && x >= r.left && x <= r.right;
+    }
+
+    if (this.readingView && Number.isFinite(x) && Number.isFinite(y)) {
+        const block = this.readingView.getBlockAtGaze(x, y);
+        if (block) {
+            onReadingContent = true;
+            readingBlockIndex = block.index;
+        }
+    }
+
+    features.onReadingContent = onReadingContent;
+    features.readingBlockIndex = readingBlockIndex;
+    features.pointerInReadingPanel = pointerInReadingPanel;
+
+    const now = performance.now();
+    let paragraphDwellTime = 0;
+    if (pointerInReadingPanel && onReadingContent && readingBlockIndex >= 0) {
+        if (readingBlockIndex !== this._lastBlockIndex || this._blockDwellStart <= 0) {
+            this._lastBlockIndex = readingBlockIndex;
+            this._blockDwellStart = now;
+        }
+        paragraphDwellTime = now - this._blockDwellStart;
+    } else {
+        this._lastBlockIndex = -1;
+        this._blockDwellStart = 0;
+    }
+    features.paragraphDwellTime = paragraphDwellTime;
+
+    return features;
+};
+
+/**
  * Periodic cognition update — keeps state machine and duration accurate without gaze/mouse movement.
  */
 FocusFlow.runCognitionTick = function() {
     if (!this._initialized || !this.perception || !this.cognition || !this.decision) return;
-    if (document.hidden) return;
+    if (document.hidden || this._simulationActive || this._calibrationInProgress) return;
 
     const now = performance.now();
-    const features = this.perception.getFeatures();
+
+    const features = this._enrichFeaturesForCognition(this.perception.getFeatures());
     this.cognition.update(features, now);
     const state = this.cognition.getState();
     this._currentStateName = state.name;
-    this.decision.decide(state, features, {});
+
+    // Gaze mode: full pipeline runs in onGazeData — only refresh state duration here.
+    if (this.config.trackingMode === 'gaze' && this.config.useWebGazer && !this.config.demoMode) {
+        return;
+    }
+
+    const strategy = this.decision.decide(state, features, {});
+
+    let gazeBlock = null;
+    if (this.readingView && Number.isFinite(this._lastGazeX) && Number.isFinite(this._lastGazeY)) {
+        gazeBlock = this.readingView.getBlockAtGaze(this._lastGazeX, this._lastGazeY);
+    }
+    this._applyInterventions(state, strategy, gazeBlock, features);
 };
 
 FocusFlow.stopMouseTracking = function() {
@@ -817,20 +992,25 @@ FocusFlow.stopDemoMode = function() {
  *   Member C: Keyword extraction → Analytics logging
  */
 FocusFlow.onGazeData = function(data, elapsedTime) {
+    if (this._calibrationInProgress) return;
+
     const now = performance.now();
 
-    // Cap processing frequency to avoid UI stalls on high-frequency gaze events.
     if ((now - this._lastPipelineRunTs) < this._pipelineIntervalMs) {
         return;
     }
     this._lastPipelineRunTs = now;
     if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
+
+    this._lastGazeX = data.x;
+    this._lastGazeY = data.y;
+    this._lastGazeTime = now;
     
     // ============================================
     // MEMBER A: Perception Layer
     // ============================================
     this.perception.update(data, elapsedTime);
-    const features = this.perception.getFeatures();
+    const features = this._enrichFeaturesForCognition(this.perception.getFeatures());
     
     // ============================================
     // MEMBER A: Cognitive State Machine
@@ -838,23 +1018,15 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     this.cognition.update(features, elapsedTime);
     const currentState = this.cognition.getState();
     this._currentStateName = currentState.name;
+
+    const gazeBlock = this.readingView.getBlockAtGaze(data.x, data.y);
     
     // ============================================
     // MEMBER A: Decision Layer
     // ============================================
     const strategy = this.decision.decide(currentState, features, {});
-    
-    // ============================================
-    // MEMBER B: Gaze-to-ReadingBlock Mapping
-    // ============================================
-    const gazeBlock = this.readingView.getBlockAtGaze(data.x, data.y);
+    this._applyInterventions(currentState, strategy, gazeBlock, features);
     const blockIndex = gazeBlock ? gazeBlock.index : -1;
-    const inReadingArea = gazeBlock !== null;
-    
-    // Update gaze cursor position (smooth following)
-    if (this.readingView) {
-        this.readingView.updateGazeCursor(data.x, data.y);
-    }
     
     // Update visual effects with gaze position (radial dim center, glow)
     if (this.visualEffects) {
@@ -862,17 +1034,8 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     }
     
     // ============================================
-    // MEMBER B: Adaptive Visual Effects
+    // MEMBER B: Adaptive Visual Effects (via InterventionExecutor)
     // ============================================
-    this._applyAdaptiveUI(currentState, strategy, gazeBlock, features);
-    
-    // ============================================
-    // MEMBER B: Adaptive Typography
-    // ============================================
-    if (this.readingView && typeof this.readingView.applyAdaptiveTypography === 'function') {
-        this.readingView.applyAdaptiveTypography(currentState.name);
-    }
-    
     // ============================================
     // MEMBER B: Set current block for WPM tracking
     // ============================================
@@ -899,23 +1062,21 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     }
     
     // ============================================
-    // MEMBER C: Dwell-triggered comprehension assist
-    // ============================================
-    this._checkComprehensionAssist(blockIndex, gazeBlock, currentState);
-    
-    // ============================================
     // MEMBER C: Analytics Recording
     // ============================================
-    const gazeData = {
-        x: data.x,
-        y: data.y,
-        blockId: gazeBlock ? gazeBlock.blockId : null,
-        blockIndex: blockIndex
-    };
-    this.analytics.recordGazeSample(gazeData, currentState.name, currentState.confidence);
+    if ((now - this._lastAnalyticsTs) >= this._analyticsIntervalMs) {
+        const gazeData = {
+            x: data.x,
+            y: data.y,
+            blockId: gazeBlock ? gazeBlock.blockId : null,
+            blockIndex: blockIndex
+        };
+        this.analytics.recordGazeSample(gazeData, currentState.name, currentState.confidence);
+        this._lastAnalyticsTs = now;
+    }
     
     // Track distraction episodes
-    if (currentState.name === 'Distracted' || currentState.name === 'OffScreen') {
+    if (currentState.name === 'Distracted') {
         this.analytics.startDistraction(currentState.name);
     } else {
         this.analytics.endDistraction();
@@ -947,164 +1108,83 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
 };
 
 /**
- * Apply adaptive UI effects based on current state and strategy
- * Member B's core logic integrated with Member A's state output
+ * Reset per-state intervention milestone flags (1.md timed triggers).
  */
-FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
-    const now = performance.now();
-    
-    // ----- Row Highlighting -----
-    if (gazeBlock && (state.name === 'Reading' || state.name === 'Normal')) {
-        this.visualEffects.highlightElement(
-            gazeBlock.element,
-            state.name
-        );
-    } else {
-        this.visualEffects.clearHighlight();
-    }
-
-    // ----- Dimming Logic -----
-    let targetDim = 0;
-    if (state.name === 'Distracted' || state.name === 'Struggling') {
-        const dwellRatio = Math.min(1, Math.max(0, ((state.duration || 0) - 2000) / 5000));
-        targetDim = dwellRatio * this.config.dimIntensity;
-    }
-    this.visualEffects.setDimLevel(targetDim);
-    
-    // ----- Distraction Alert -----
-    if (state.name === 'Distracted') {
-        if (state.duration > 500 && state.duration < 3000 && !this._distractionAlertShown) {
-            this._distractionAlertShown = true;
-            this.visualEffects.showPrompt(
-                '👀',
-                this._t('prompt.stillThere.title'),
-                this._t('prompt.stillThere.sub')
-            );
-            this.visualEffects.playSound('feedback');
-        }
-        
-        if (state.duration > 5000) {
-            const elapsedSinceLastPrompt = now - this._lastDistractionPromptTime;
-            if (elapsedSinceLastPrompt > 10000) {
-                this._lastDistractionPromptTime = now;
-                const reminders = [
-                    { icon: '💭', text: this._t('prompt.reminder1.text'), sub: this._t('prompt.reminder1.sub') },
-                    { icon: '🎯', text: this._t('prompt.reminder2.text'), sub: this._t('prompt.reminder2.sub') },
-                    { icon: '🌿', text: this._t('prompt.reminder3.text'), sub: this._t('prompt.reminder3.sub') },
-                    { icon: '📖', text: this._t('prompt.reminder4.text'), sub: this._t('prompt.reminder4.sub') }
-                ];
-                const pick = reminders[Math.floor(Math.random() * reminders.length)];
-                this.visualEffects.showPrompt(pick.icon, pick.text, pick.sub);
-                this.visualEffects.playSound('feedback');
-            }
-        }
-    } else {
-        this._distractionAlertShown = false;
-        this._lastDistractionPromptTime = 0;
-    }
-
-    // ----- Off-Screen Wake-Up -----
-    if (state.name === 'OffScreen' || state.name === 'Distracted') {
-        if (!this._wakeUpTriggered && (state.duration || 0) > 8000) {
-            this._wakeUpTriggered = true;
-            this._offScreenStart = now;
-            
-            setTimeout(() => {
-                if (this._currentStateName === 'OffScreen' || this._currentStateName === 'Distracted') {
-                    this.visualEffects.showWakeUpCue();
-                    this.visualEffects.playSound('wakeup');
-                    this.visualEffects.showPrompt(
-                        '👀',
-                        this._t('prompt.wakeup.title'),
-                        this._t('prompt.wakeup.sub')
-                    );
-                }
-            }, 15000);
-        }
-    } else {
-        this._wakeUpTriggered = false;
-        
-        if (this._lastBlockIndex === -1 && gazeBlock) {
-            this.visualEffects.showPositiveFeedback();
-            this.visualEffects.playSound('feedback');
-        }
-    }
-    
-    // ----- Reading Progress -----
-    if (gazeBlock && gazeBlock.index >= 0) {
-        const progress = this.readingView.getReadingProgress(gazeBlock.index);
-        this.visualEffects.updateProgress(progress);
-    }
-    
-    // ----- State-Specific Prompts -----
-    if (state.name === 'Struggling' && !this._lastStrugglePrompt) {
-        const duration = state.duration || 0;
-        if (duration > 3000 && duration < 4000) {
-            this.visualEffects.showPrompt(
-                '🧠',
-                this._t('prompt.struggling.title'),
-                this._t('prompt.struggling.sub')
-            );
-            this._lastStrugglePrompt = true;
-        }
-    }
-    if (state.name !== 'Struggling') {
-        this._lastStrugglePrompt = false;
-    }
-    
-    // Update last block index
-    if (gazeBlock) {
-        this._lastBlockIndex = gazeBlock.index;
-    }
+FocusFlow._resetInterventionMilestones = function(stateName) {
+    this._interventionMilestones = {
+        stateKey: stateName,
+        distracted6: false,
+        distracted12: false,
+        struggling8: false
+    };
 };
-
 
 /**
- * Show a comprehension summary when the user dwells on a paragraph long enough.
- * Uses its own dwell tracker (independent from _lastBlockIndex) and never auto-hides.
+ * Apply intervention: resolve strategy from state, fire timed actions, sustain effects.
  */
-FocusFlow._checkComprehensionAssist = function(blockIndex, gazeBlock, state) {
-    const now = performance.now();
-    const focusedStates = ['Normal', 'Struggling'];
-    const confirmMs = this.config.summaryBlockConfirmMs || 1500;
+FocusFlow._applyInterventions = function(state, strategy, gazeBlock, features) {
+    if (typeof InterventionExecutor === 'undefined') return;
 
-    if (blockIndex < 0 || !gazeBlock || !focusedStates.includes(state.name)) {
-        return;
+    const interventionStrategy = this.decision && this.decision.interventionStrategy;
+    const resolved = interventionStrategy
+        ? interventionStrategy.resolve(state)
+        : (strategy || { id: 'none' });
+    const displayState = interventionStrategy
+        ? interventionStrategy.getDisplayState(state)
+        : 'Idle';
+
+    const ctx = {
+        focusFlow: this,
+        state,
+        strategy: resolved,
+        gazeBlock,
+        features,
+        displayState
+    };
+
+    if (this._interventionMilestones.stateKey !== state.name) {
+        this._resetInterventionMilestones(state.name);
+
+        if (state.name === 'Normal' || state.name === 'Idle') {
+            InterventionExecutor.deactivateAll(ctx);
+        } else if (state.name === 'Struggling') {
+            InterventionExecutor.activate({ id: 'keyword_highlight' }, ctx, { force: true });
+        } else if (state.name === 'Distracted') {
+            InterventionExecutor.deactivateAll(ctx);
+        }
     }
 
-    if (blockIndex !== this._assistCandidateBlock) {
-        this._assistCandidateBlock = blockIndex;
-        this._assistCandidateSince = now;
-        this._assistDwellBlock = -1;
-        this._assistDwellStart = 0;
-        return;
+    const durationSec = (state.duration || 0) / 1000;
+
+    if (state.name === 'Distracted') {
+        if (durationSec >= 6 && !this._interventionMilestones.distracted6) {
+            InterventionExecutor.activate({ id: 'floating_prompt' }, ctx);
+            this._interventionMilestones.distracted6 = true;
+        }
+        if (durationSec >= 12 && !this._interventionMilestones.distracted12) {
+            InterventionExecutor.activate({ id: 'sound_alert' }, ctx);
+            this._interventionMilestones.distracted12 = true;
+        }
     }
 
-    if ((now - this._assistCandidateSince) < confirmMs) {
-        return;
+    if (state.name === 'Struggling') {
+        if (durationSec >= 8 && !this._interventionMilestones.struggling8) {
+            InterventionExecutor.activate({ id: 'summary_panel' }, ctx);
+            this._interventionMilestones.struggling8 = true;
+        }
     }
 
-    if (this._assistDwellBlock !== blockIndex) {
-        this._assistDwellBlock = blockIndex;
-        this._assistDwellStart = now;
-    }
-
-    // Start LLM prefetch as soon as block is stable (while user is still reading)
-    if (!this._assistPrefetchStartedFor.has(blockIndex) && this.llmSummaryManager) {
-        this._assistPrefetchStartedFor.add(blockIndex);
-        this.llmSummaryManager.onReadingBlock(blockIndex, this._allBlockTexts);
-    }
-
-    const dwellTime = now - this._assistDwellStart;
-    if (dwellTime < this.config.dwellForSummary) return;
-    if (this._autoTriggeredForBlock.has(blockIndex)) return;
-    if (this._summaryGenerationInProgress.has(blockIndex)) return;
-
-    this.requestComprehensionForBlock(blockIndex, { auto: true, dwellTime });
+    InterventionExecutor.sustain(resolved, ctx);
 };
 
+/** @deprecated Use _applyInterventions */
+FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
+    this._applyInterventions(state, strategy, gazeBlock, features);
+};
+
+
 FocusFlow.requestComprehensionForBlock = function(blockIndex, options = {}) {
-    const { manual = false, auto = false, dwellTime = 0 } = options;
+    const { manual = false, auto = false, struggleTrigger = false, simplified = false, dwellTime = 0 } = options;
     if (blockIndex < 0) return;
 
     const cached = this._blockSummaryCache[blockIndex];
@@ -1114,13 +1194,9 @@ FocusFlow.requestComprehensionForBlock = function(blockIndex, options = {}) {
         return;
     }
 
-    if (auto) {
-        if (this._autoTriggeredForBlock.has(blockIndex)) return;
-        this._autoTriggeredForBlock.add(blockIndex);
-        if (cached) {
-            this._displayComprehensionCard(blockIndex, cached, dwellTime);
-            return;
-        }
+    if (auto && struggleTrigger && cached) {
+        this._displayComprehensionCard(blockIndex, cached, dwellTime, { recordAnalytics: true });
+        return;
     }
 
     if (this._summaryGenerationInProgress.has(blockIndex)) {
@@ -1133,7 +1209,23 @@ FocusFlow.requestComprehensionForBlock = function(blockIndex, options = {}) {
         ? this.readingView.getBlockElement(blockIndex)
         : null;
     const gazeBlock = blockEl ? { element: blockEl } : null;
-    this._generateComprehensionForBlock(blockIndex, gazeBlock, dwellTime);
+    this._generateComprehensionForBlock(blockIndex, gazeBlock, dwellTime, { simplified });
+};
+
+FocusFlow._removeLegacyKeywordPanels = function() {
+    document.querySelectorAll('[data-ff-legacy-keyword]').forEach((el) => el.remove());
+    document.querySelectorAll('div').forEach((el) => {
+        if (el.id === 'ff-comprehension-card') return;
+        const style = el.style || {};
+        const html = el.innerHTML || '';
+        const isLegacyKeyword = style.position === 'fixed' && (
+            html.includes('🔑') ||
+            html.includes('KEY TERMS') ||
+            html.includes('关键术语') ||
+            html.includes('keyTerms')
+        );
+        if (isLegacyKeyword) el.remove();
+    });
 };
 
 FocusFlow.reopenComprehensionForBlock = function(blockIndex) {
@@ -1194,23 +1286,8 @@ FocusFlow._displayComprehensionCard = function(blockIndex, cached, dwellTime, op
     }
 };
 
-FocusFlow._removeLegacyKeywordPanels = function() {
-    document.querySelectorAll('[data-ff-legacy-keyword]').forEach((el) => el.remove());
-    document.querySelectorAll('div').forEach((el) => {
-        if (el.id === 'ff-comprehension-card') return;
-        const style = el.style || {};
-        const html = el.innerHTML || '';
-        const isLegacyKeyword = style.position === 'fixed' && (
-            html.includes('🔑') ||
-            html.includes('KEY TERMS') ||
-            html.includes('关键术语') ||
-            html.includes('keyTerms')
-        );
-        if (isLegacyKeyword) el.remove();
-    });
-};
-
-FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwellTime) {
+FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwellTime, options = {}) {
+    const simplified = !!(options && options.simplified);
     const text = (this._allBlockTexts && this._allBlockTexts[blockIndex])
         ? this._allBlockTexts[blockIndex]
         : (gazeBlock && gazeBlock.element ? gazeBlock.element.textContent : '');
@@ -1220,6 +1297,14 @@ FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwell
         : (typeof ParagraphSummarizer !== 'undefined' ? ParagraphSummarizer.detectLanguage(text) : 'en');
 
     this._displayComprehensionLoading(blockIndex, dwellTime);
+
+    const summarizeLocal = () => {
+        if (typeof ParagraphSummarizer === 'undefined') return null;
+        return ParagraphSummarizer.summarize(text, {
+            lang: docLang,
+            maxChars: simplified ? 120 : undefined
+        });
+    };
 
     const finish = (summaryText, method) => {
         if (!summaryText) {
@@ -1247,8 +1332,8 @@ FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwell
         manager.getSummary(blockIndex, text, { lang: docLang })
             .then((result) => finish(result.text, result.method))
             .catch(() => {
-                if (typeof ParagraphSummarizer !== 'undefined') {
-                    const local = ParagraphSummarizer.summarize(text, { lang: docLang });
+                const local = summarizeLocal();
+                if (local) {
                     finish(local.text, local.method);
                 } else {
                     this._summaryGenerationInProgress.delete(blockIndex);
@@ -1260,9 +1345,7 @@ FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwell
     window.setTimeout(() => {
         try {
             let summary = this._paragraphSummaries && this._paragraphSummaries[blockIndex];
-            if (!summary && typeof ParagraphSummarizer !== 'undefined') {
-                summary = ParagraphSummarizer.summarize(text, { lang: docLang });
-            }
+            if (!summary) summary = summarizeLocal();
             finish(summary && summary.text, summary && summary.method);
         } catch (_) {
             this._summaryGenerationInProgress.delete(blockIndex);
@@ -1282,24 +1365,46 @@ FocusFlow.showSessionReport = function() {
  * Update the UI dashboard with current state info
  */
 FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
+    const interventionStrategy = this.decision && this.decision.interventionStrategy;
+    const displayState = interventionStrategy
+        ? interventionStrategy.getDisplayState(state)
+        : (state && state.name) || 'Idle';
+    const resolved = strategy || (interventionStrategy ? interventionStrategy.resolve(state) : { id: 'none' });
+
     const iconEl = document.getElementById('ff-state-icon');
     const nameEl = document.getElementById('ff-state-name');
     const durEl = document.getElementById('ff-state-duration');
     const confEl = document.getElementById('ff-state-confidence');
-    
+
+    const displayIcons = {
+        Focus: '🧠',
+        LowDistraction: '👀',
+        HighDistraction: '⚠️',
+        LowStruggling: '🤔',
+        HighStruggling: '😓',
+        Idle: '⏳'
+    };
+    const displayColors = {
+        Focus: '#4CAF50',
+        LowDistraction: '#FF9800',
+        HighDistraction: '#F44336',
+        LowStruggling: '#FF5722',
+        HighStruggling: '#D32F2F',
+        Idle: '#94a3b8'
+    };
+
     if (iconEl) {
-        const icons = { 'Normal': '🧠', 'Distracted': '👀', 'Struggling': '🤔', 'Recovering': '🔄', 'OffScreen': '🚶' };
-        iconEl.textContent = icons[state.name] || '🧠';
+        iconEl.textContent = displayIcons[displayState] || '🧠';
     }
     if (nameEl) {
         nameEl.textContent = (typeof I18n !== 'undefined')
-            ? I18n.translateState(state.name)
-            : state.name;
+            ? I18n.translateState(displayState)
+            : displayState;
     }
     const descEl = document.getElementById('ff-state-desc');
     if (descEl) {
         descEl.textContent = (typeof I18n !== 'undefined')
-            ? I18n.translateStateDesc(state.name)
+            ? I18n.translateStateHint(displayState)
             : 'Focused reading';
     }
     if (durEl) {
@@ -1308,18 +1413,30 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     if (confEl) {
         confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
     }
-    
+
     const strategyNameEl = document.getElementById('ff-strategy-name');
     const strategyDescEl = document.getElementById('ff-strategy-desc');
-    if (strategyNameEl) {
-        strategyNameEl.textContent = (strategy && strategy.name)
-            ? strategy.name
-            : this._t('strategy.none');
+    const strategyText = (typeof I18n !== 'undefined')
+        ? I18n.translateStrategy(resolved)
+        : {
+            name: resolved?.name || this._t('strategy.none'),
+            desc: resolved?.description || this._t('strategy.waiting')
+        };
+    if (strategyNameEl) strategyNameEl.textContent = strategyText.name;
+    if (strategyDescEl) strategyDescEl.textContent = strategyText.desc;
+
+    const badgeEl = document.getElementById('ff-escalation-badge');
+    if (badgeEl) {
+        badgeEl.hidden = true;
     }
-    if (strategyDescEl) {
-        strategyDescEl.textContent = (strategy && strategy.description)
-            ? strategy.description
-            : this._t('strategy.waiting');
+
+    const cardState = document.getElementById('card-state');
+    if (cardState && state) {
+        const color = displayColors[displayState] || '#1e293b';
+        cardState.style.borderColor = color;
+        cardState.style.boxShadow = `0 0 20px ${color}20`;
+        if (nameEl) nameEl.style.color = color;
+        if (confEl) confEl.style.backgroundColor = color;
     }
     
     const summary = this.analytics.getSessionSummary();

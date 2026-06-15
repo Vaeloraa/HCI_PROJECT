@@ -76,7 +76,7 @@ class AttentionAnalytics {
      * @returns {boolean}
      */
     _isReadingState(state) {
-        return ['Normal', 'Recovering', 'Struggling'].includes(state);
+        return ['Normal', 'Struggling'].includes(state);
     }
 
     /**
@@ -415,8 +415,8 @@ class AttentionAnalytics {
 
         const prevName = previousState && previousState.name ? previousState.name : this._lastStateName;
         const currName = currentState.name;
-        const distracted = prevName === 'Distracted' || prevName === 'OffScreen';
-        const recovering = currName === 'Recovering' || currName === 'Normal';
+        const distracted = prevName === 'Distracted';
+        const recovering = currName === 'Normal';
 
         if (distracted && this._pendingDistractionStart) {
             const distractionMs = now - this._pendingDistractionStart;
@@ -428,7 +428,7 @@ class AttentionAnalytics {
             this._pendingDistractionStart = null;
         }
 
-        if (currName === 'Distracted' || currName === 'OffScreen') {
+        if (currName === 'Distracted') {
             if (!this._pendingDistractionStart) {
                 this._pendingDistractionStart = now;
             }

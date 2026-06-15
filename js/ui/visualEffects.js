@@ -208,10 +208,6 @@ class VisualEffects {
                 glowSize = 160;
                 glowOpacity = 0.15;
                 break;
-            case 'Recovering':
-                glowSize = 130;
-                glowOpacity = 0.10;
-                break;
             default:
                 glowSize = 120;
                 glowOpacity = 0.12;
@@ -265,11 +261,6 @@ class VisualEffects {
             case 'Struggling':
                 color1 = 'rgba(244, 67, 54, 0.08)';
                 color2 = 'rgba(244, 67, 54, 0.04)';
-                color3 = 'transparent';
-                break;
-            case 'Recovering':
-                color1 = 'rgba(33, 150, 243, 0.10)';
-                color2 = 'rgba(33, 150, 243, 0.05)';
                 color3 = 'transparent';
                 break;
             default: // Normal / Focused
@@ -339,6 +330,54 @@ class VisualEffects {
     }
 
     /**
+     * Highlight extracted keywords inside a paragraph block.
+     * @param {HTMLElement} element
+     * @param {Array<{word?: string, term?: string}>} keywords
+     */
+    applyKeywordHighlights(element, keywords) {
+        this.clearKeywordHighlights();
+        if (!element || !keywords || !keywords.length) return;
+
+        this._keywordHighlightEl = element;
+        this._keywordHighlightOriginal = element.innerHTML;
+
+        const terms = keywords
+            .map((k) => k.word || k.term)
+            .filter((w) => w && w.length > 1)
+            .slice(0, 5);
+
+        if (!terms.length) return;
+
+        const textNode = Array.from(element.childNodes).find(
+            (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+        );
+        if (!textNode) return;
+
+        const sourceText = textNode.textContent;
+        const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
+        let html = sourceText;
+
+        for (const term of sortedTerms) {
+            const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(`(${escaped})`, 'gi');
+            html = html.replace(re, '<mark class="ff-kw-highlight">$1</mark>');
+        }
+
+        const wrapper = document.createElement('span');
+        wrapper.className = 'ff-block-text';
+        wrapper.innerHTML = html;
+        element.replaceChild(wrapper, textNode);
+    }
+
+    clearKeywordHighlights() {
+        if (this._keywordHighlightEl && this._keywordHighlightOriginal != null) {
+            this._keywordHighlightEl.innerHTML = this._keywordHighlightOriginal;
+        }
+        this._keywordHighlightEl = null;
+        this._keywordHighlightOriginal = null;
+    }
+
+    /**
      * Public alias: set dim level with smooth animation (called from main.js)
      * @param {number} intensity - 0 to 1
      */
@@ -359,7 +398,7 @@ class VisualEffects {
             this.hideGazeGlow();
             return;
         }
-        const isReading = this.currentState === 'Normal' || this.currentState === 'Reading' || this.currentState === 'Recovering';
+        const isReading = this.currentState === 'Normal' || this.currentState === 'Reading';
         this.updateGazeGlow(x, y, isReading);
     }
 
@@ -607,8 +646,7 @@ class VisualEffects {
 
         if (meta) {
             meta.textContent = t('comprehension.meta', {
-                index: payload.paragraphNumber || (payload.blockIndex + 1),
-                seconds: payload.dwellSeconds || 0
+                index: payload.paragraphNumber || (payload.blockIndex + 1)
             });
         }
 
@@ -634,8 +672,7 @@ class VisualEffects {
 
         if (meta) {
             meta.textContent = t('comprehension.meta', {
-                index: payload.paragraphNumber || (payload.blockIndex + 1),
-                seconds: payload.dwellSeconds || 0
+                index: payload.paragraphNumber || (payload.blockIndex + 1)
             });
         }
 
@@ -680,6 +717,7 @@ class VisualEffects {
      */
     reset() {
         this._removeHighlight();
+        this.clearKeywordHighlights();
         this.dimIntensity = 0;
         this.dimTargetIntensity = 0;
         if (this.dimOverlay) {

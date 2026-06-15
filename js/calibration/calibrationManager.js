@@ -93,36 +93,15 @@ class CalibrationManager {
         // Main overlay
         this._overlay = document.createElement('div');
         this._overlay.id = 'ff-calibration-overlay';
-        this._overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: #f8fafc;
-            backdrop-filter: none;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            transition: opacity 0.5s ease;
-        `;
+        this._overlay.className = 'ff-calibration-screen';
+
+        const previewSlot = document.createElement('div');
+        previewSlot.id = 'ff-calibration-preview';
+        previewSlot.className = 'ff-calibration-preview';
+        this._overlay.appendChild(previewSlot);
 
         const guideGrid = document.createElement('div');
-        guideGrid.style.cssText = `
-            position: absolute;
-            left: 20%;
-            top: 16%;
-            width: 60%;
-            height: 60%;
-            z-index: 1;
-            pointer-events: none;
-            border: 1px solid rgba(148, 163, 184, 0.14);
-            border-radius: 18px;
-            background:
-                linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-                linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% + 0.5px), transparent calc(50% + 0.5px));
-        `;
+        guideGrid.className = 'ff-calibration-guide-grid';
         this._overlay.appendChild(guideGrid);
         
         // Instruction panel at top
@@ -369,8 +348,8 @@ class CalibrationManager {
             bar.style.width = `${(index / this.points.length) * 100}%`;
         }
         
-        // Start auto-collection timer (will collect WebGazer samples)
-        this._startAutoCollect();
+        // Gaze samples come from WebGazer listener cache (no getCurrentPrediction polling).
+        this._stopAutoCollect();
         
         // Call progress callback
         if (this.onProgress) {
@@ -380,50 +359,25 @@ class CalibrationManager {
         if (this.debug) console.log(`[Calibration] Showing point ${index + 1}/${this.points.length}: ${pt.label}`);
     }
 
-    /**
-     * Automatically collect gaze samples while user looks at the point
-     */
     _startAutoCollect() {
         this._stopAutoCollect();
-        
-        // Continuously gather WebGazer predictions in the background while the
-        // user looks at the point. These are buffered and the most recent ones
-        // are used when the user explicitly confirms by clicking / pressing Space.
-        // NOTE: We intentionally DO NOT auto-confirm on a timer. The user must
-        // click or press Space to advance — otherwise calibration would race
-        // through all 9 points on its own before the user is ready.
-        this._collectInterval = setInterval(() => {
-            if (!this.isCalibrating) return;
+    }
 
-            // Get current WebGazer prediction
-            let gazeData = null;
-            try {
-                if (window.webgazer && window.webgazer.getCurrentPrediction) {
-                    gazeData = window.webgazer.getCurrentPrediction();
-                }
-            } catch (e) {
-                // WebGazer not ready
-            }
+    _sampleGazeAtConfirm() {
+        const pt = this.points[this.currentPointIndex];
+        const ff = window.FocusFlow;
+        const cached = ff && ff._calibrationLastGaze;
 
-            if (gazeData && gazeData.x !== undefined && gazeData.y !== undefined) {
-                this.currentSamples.push({
-                    x: gazeData.x,
-                    y: gazeData.y,
-                    time: performance.now(),
-                    targetPoint: this.points[this.currentPointIndex]
-                });
-                // Keep only the most recent samples so the average reflects
-                // where the user is looking right before they confirm.
-                if (this.currentSamples.length > this.samplesPerPoint * 4) {
-                    this.currentSamples.shift();
-                }
+        if (cached && Number.isFinite(cached.x) && Number.isFinite(cached.y)) {
+            return [{
+                x: cached.x,
+                y: cached.y,
+                time: performance.now(),
+                targetPoint: pt
+            }];
+        }
 
-                if (this.debug) {
-                    console.log(`[Calibration] Buffered sample ${this.currentSamples.length}: (${gazeData.x.toFixed(0)}, ${gazeData.y.toFixed(0)})`);
-                }
-            }
-        }, 200);
-        // No auto-confirm timer — advancement happens only on user input.
+        return [];
     }
 
 
@@ -494,8 +448,9 @@ class CalibrationManager {
         if (!this.isCalibrating) return;
         
         this._stopAutoCollect();
-        
+
         const pt = this.points[this.currentPointIndex];
+        this.currentSamples = this._sampleGazeAtConfirm();
         
         // Calculate the center of the calibration point in viewport coordinates
         const viewportX = pt.x * window.innerWidth;
@@ -540,7 +495,7 @@ class CalibrationManager {
                 this._statusEl.style.color = '#64748b';
             }
             this._showPoint(this.currentPointIndex + 1);
-        }, 400);
+        }, 200);
     }
 
     /**
@@ -572,22 +527,11 @@ class CalibrationManager {
         
         // Show success and dismiss overlay
         setTimeout(() => {
-            // Show success message
-            if (this._instructionEl) {
-                this._instructionEl.innerHTML = `
-                    <div style="font-size: 20px; color: #4ade80; margin-bottom: 8px;">✨ Calibration complete!</div>
-                    <div style="font-size: 14px; color: #94a3b8;">Gaze tracking is optimized. Starting reading...</div>
-                `;
+            this._dismissOverlay();
+            if (this.onComplete) {
+                this.onComplete(this.calibrationData);
             }
-            
-            // Dismiss overlay after a moment
-            setTimeout(() => {
-                this._dismissOverlay();
-                if (this.onComplete) {
-                    this.onComplete(this.calibrationData);
-                }
-            }, 1500);
-        }, 500);
+        }, 600);
     }
 
     /**
@@ -599,25 +543,12 @@ class CalibrationManager {
                 console.warn('[Calibration] WebGazer not available');
                 return;
             }
-            
-            // WebGazer has a built-in calibration system
-            // We use setRegression to retrain with our data
-            // For each calibration point, we feed the known screen position
-            // and the corresponding eye features
-            
-            // The approach: we collected the gaze predictions at each known screen point.
-            // WebGazer stores data internally; we just need to signal it to retrain.
-            
-            // If WebGazer has saveDataAcrossSessions enabled, our calibration persists
-            if (typeof webgazer.setRegression === 'function') {
-                // Force WebGazer to re-train with all accumulated data
-                webgazer.setRegression('ridge');
-                console.log('[Calibration] Applied calibration data to WebGazer model');
-            }
-            
-            // Store calibration data for reference
+
+            // Offsets are applied in FocusFlow._applyCalibration — do not call
+            // setRegression() here; it retrains the ridge model synchronously and
+            // freezes the UI for several seconds.
             window.__focusflow_calibration = this.calibrationData;
-            
+            console.log('[Calibration] Stored calibration offsets for runtime correction');
         } catch (e) {
             console.warn('[Calibration] Error applying to WebGazer:', e);
         }

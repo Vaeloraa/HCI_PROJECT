@@ -27,8 +27,6 @@
         }
     </script>
 
-    <!-- Chart.js for visualization -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <!-- WebGazer.js (local copy with face mesh assets) -->
     <!--
       WebGazer bundles its own MediaPipe FaceMesh loader and resolves assets
@@ -59,6 +57,10 @@
                 <div class="ff-segment-group ff-lang-toggle" id="ff-lang-toggle" role="group" aria-label="Language">
                     <button type="button" class="ff-segment-btn ff-lang-toggle-btn" data-lang="zh">中文</button>
                     <button type="button" class="ff-segment-btn ff-lang-toggle-btn active" data-lang="en">EN</button>
+                </div>
+                <div class="ff-segment-group ff-theme-toggle" id="ff-theme-toggle" role="group" aria-label="Theme">
+                    <button type="button" class="ff-segment-btn ff-theme-toggle-btn active" data-theme="light" data-i18n="btn.theme.light">Light</button>
+                    <button type="button" class="ff-segment-btn ff-theme-toggle-btn" data-theme="dark" data-i18n="btn.theme.dark">Dark</button>
                 </div>
             </div>
             <button type="button" id="btn-gaze-dot" class="ff-icon-btn ff-gaze-dot-toggle active" data-i18n-title="gaze.toggle" title="Show or hide gaze position indicator" onclick="toggleGazeDot()" aria-label="Toggle gaze dot">👁️</button>
@@ -139,6 +141,7 @@
                     <div class="ff-state-compact">
                         <span class="ff-state-icon" id="ff-state-icon">🧠</span>
                         <div class="ff-state-info">
+                            <span class="ff-state-label" data-i18n="state.cognitive">认知状态</span>
                             <span class="ff-state-name" id="ff-state-name">Normal</span>
                             <span class="ff-state-duration" id="ff-state-desc">Focused reading</span>
                         </div>
@@ -146,12 +149,14 @@
                             <span id="ff-state-duration">0.0</span>s
                         </div>
                     </div>
-                    <!-- Strategy inline -->
                     <div class="ff-strategy-compact">
-                        <span class="ff-strategy-label">🎯</span>
-                        <span class="ff-strategy-name" id="ff-strategy-name" data-i18n="state.noIntervention">No intervention</span>
-                        <span class="ff-strategy-desc" id="ff-strategy-desc" data-i18n="state.waitingChanges">Waiting for state changes...</span>
-                        <span class="ff-badge" id="ff-escalation-badge">low</span>
+                        <span class="ff-strategy-icon">🎯</span>
+                        <div class="ff-strategy-info">
+                            <span class="ff-strategy-label" data-i18n="state.intervention">干预策略</span>
+                            <span class="ff-strategy-name" id="ff-strategy-name">No intervention</span>
+                            <span class="ff-strategy-desc" id="ff-strategy-desc">No action needed</span>
+                        </div>
+                        <span class="ff-badge" id="ff-escalation-badge" hidden>低</span>
                     </div>
                 </div>
             </div>
@@ -258,16 +263,6 @@
                 </div>
             </div>
 
-            <!-- State Probability Chart -->
-            <div class="ff-card ff-card-chart">
-                <div class="ff-card-header">
-                    <h2 data-i18n="chart.stateProb">📊 State Probability Distribution</h2>
-                </div>
-                <div class="ff-card-body">
-                    <canvas id="stateProbChart" height="120"></canvas>
-                </div>
-            </div>
-
             <!-- State Timeline -->
             <div class="ff-card ff-card-timeline">
                 <div class="ff-card-header">
@@ -319,6 +314,7 @@
     <!-- 3. Decision Layer (Member A) -->
     <script src="js/decision/adaptiveThreshold.js"></script>
     <script src="js/decision/interventionStrategy.js"></script>
+    <script src="js/decision/interventionExecutor.js"></script>
     <script src="js/decision/decisionModule.js"></script>
     
     <!-- i18n -->
@@ -349,7 +345,6 @@
         let isDemoRunning = false;
         let demoInterval = null;
         let updateInterval = null;
-        let probChart = null;
         let timelineHistory = [];
         let logEntries = 0;
         const MAX_TIMELINE = 20;
@@ -370,11 +365,10 @@
                 I18n.applyDocument();
                 I18n.bindLangToggle();
             }
+            if (typeof bindThemeToggle === 'function') bindThemeToggle();
             renderRuntimeNotice();
             log('✅', 'Page loaded');
             log('ℹ️', 'Click "Start Demo Mode" to test');
-            
-            initProbChart();
             
             // Listen for state changes
             document.addEventListener('focusflow-state-change', function(e) {
@@ -384,6 +378,38 @@
             
             // Set up periodic UI update
             updateInterval = setInterval(updateUI, 200);
+
+            window.suspendReadingAppForCalibration = function() {
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                    updateInterval = null;
+                }
+                document.body.classList.add('ff-app-suspended');
+                const readingPanel = document.getElementById('ff-reading-panel');
+                const dashboard = document.getElementById('ff-dashboard-panel');
+                if (readingPanel) readingPanel.setAttribute('aria-hidden', 'true');
+                if (dashboard) dashboard.setAttribute('aria-hidden', 'true');
+            };
+
+            window.resumeReadingAppAfterCalibration = function() {
+                document.body.classList.remove('ff-app-suspended');
+                const readingPanel = document.getElementById('ff-reading-panel');
+                const dashboard = document.getElementById('ff-dashboard-panel');
+                if (readingPanel) readingPanel.removeAttribute('aria-hidden');
+                if (dashboard) dashboard.removeAttribute('aria-hidden');
+                if (!updateInterval) {
+                    updateInterval = setInterval(updateUI, 200);
+                }
+                if (typeof mountWebGazerPreview === 'function') {
+                    mountWebGazerPreview();
+                }
+                if (typeof syncTrackingToggleUI === 'function') {
+                    syncTrackingToggleUI();
+                }
+                if (typeof applyGazeDotVisibility === 'function') {
+                    applyGazeDotVisibility();
+                }
+            };
             
             // Initialize FaceDetector API if available
             if ('FaceDetector' in window) {
@@ -408,13 +434,19 @@
 
         // ====== GAZE DOT VISIBILITY (separate from mouse/eye tracking mode) ======
         window.applyGazeDotVisibility = function() {
+            if (FocusFlow && typeof FocusFlow._ensureWebGazerGazeDot === 'function') {
+                FocusFlow._ensureWebGazerGazeDot();
+                return;
+            }
+
             const isGaze = FocusFlow.config.trackingMode === 'gaze';
             const show = FocusFlow.config.showGazeDot && isGaze;
 
             const cursor = document.getElementById('ff-gaze-cursor');
             if (cursor) {
-                cursor.style.display = show ? 'block' : 'none';
-                cursor.style.opacity = show ? '1' : '0';
+                cursor.style.display = 'none';
+                cursor.style.opacity = '0';
+                cursor.style.visibility = 'hidden';
             }
             if ((!show || !isGaze) && FocusFlow.visualEffects) {
                 FocusFlow.visualEffects.hideGazeGlow();
@@ -748,6 +780,10 @@
                                 <button type="button" class="ff-segment-btn ff-lang-toggle-btn" data-lang="zh">中文</button>
                                 <button type="button" class="ff-segment-btn ff-lang-toggle-btn active" data-lang="en">EN</button>
                             </div>
+                            <div class="ff-segment-group ff-theme-toggle" id="ff-theme-toggle" role="group" aria-label="Theme">
+                                <button type="button" class="ff-segment-btn ff-theme-toggle-btn active" data-theme="light" data-i18n="btn.theme.light">Light</button>
+                                <button type="button" class="ff-segment-btn ff-theme-toggle-btn" data-theme="dark" data-i18n="btn.theme.dark">Dark</button>
+                            </div>
                         </div>
                         <button type="button" id="btn-gaze-dot" class="ff-icon-btn ff-gaze-dot-toggle active" data-i18n-title="gaze.toggle" title="Show or hide gaze position indicator" onclick="toggleGazeDot()" aria-label="Toggle gaze dot">👁️</button>
                         <div class="ff-timer-widget" id="ff-timer-widget" data-i18n-title="timer.title" title="Reading timer">
@@ -759,7 +795,6 @@
                         <input type="file" id="ff-file-input" accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.csv,.json,.xml,.html,.cpp,.c,.h,.py,.js,.ts,.css,.java,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg" style="display:none" multiple onchange="handleFileImport(event)">
                         <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">Import Text</button>
                         <button id="btn-session-report" class="ff-btn ff-btn-secondary" onclick="showSessionReport()" data-i18n="btn.sessionReport">Session Report</button>
-                        <button id="btn-theme" class="ff-btn ff-btn-secondary" onclick="toggleTheme()" data-i18n="btn.theme.dark">Dark</button>
                         <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()" data-i18n="btn.reset">Reset</button>
                     </div>
                 `;
@@ -806,11 +841,11 @@
                 `;
             }
 
-            updateThemeButton(document.body.dataset.theme || 'light');
             if (typeof I18n !== 'undefined') {
                 I18n.applyDocument();
                 I18n.bindLangToggle();
             }
+            if (typeof bindThemeToggle === 'function') bindThemeToggle();
             const focusContainer = document.getElementById('ff-focus-toggle-container');
             if (focusContainer && typeof FocusMode !== 'undefined') {
                 focusContainer.innerHTML = FocusMode.createToggleHTML();
@@ -826,32 +861,48 @@
             const saved = localStorage.getItem('focusflow_theme');
             const theme = saved || 'light';
             document.body.dataset.theme = theme;
-            updateThemeButton(theme);
-        }
-
-        window.toggleTheme = function() {
-            const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
-            document.body.dataset.theme = next;
-            localStorage.setItem('focusflow_theme', next);
-            updateThemeButton(next);
-        };
-
-        function updateThemeButton(theme) {
-            const btn = document.getElementById('btn-theme');
-            if (!btn) return;
-            if (typeof I18n !== 'undefined') {
-                btn.textContent = I18n.t(theme === 'dark' ? 'btn.theme.light' : 'btn.theme.dark');
-            } else {
-                btn.textContent = theme === 'dark' ? 'Light' : 'Dark';
+            if (typeof syncThemeToggleUI === 'function') {
+                syncThemeToggleUI();
             }
         }
+
+        window.setTheme = function(theme) {
+            const next = theme === 'dark' ? 'dark' : 'light';
+            document.body.dataset.theme = next;
+            localStorage.setItem('focusflow_theme', next);
+            if (typeof syncThemeToggleUI === 'function') {
+                syncThemeToggleUI();
+            }
+        };
+
+        window.syncThemeToggleUI = function() {
+            const theme = document.body.dataset.theme || 'light';
+            document.querySelectorAll('#ff-theme-toggle [data-theme]').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.theme === theme);
+            });
+        };
+
+        window.bindThemeToggle = function() {
+            const group = document.getElementById('ff-theme-toggle');
+            if (!group) return;
+            group.querySelectorAll('[data-theme]').forEach((btn) => {
+                btn.onclick = () => setTheme(btn.dataset.theme);
+            });
+            syncThemeToggleUI();
+        };
+
+        /** @deprecated Use setTheme() */
+        window.toggleTheme = function() {
+            const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+            setTheme(next);
+        };
 
         function refreshLanguageUI() {
             if (typeof I18n !== 'undefined') {
                 I18n.applyDocument();
                 I18n.bindLangToggle();
             }
-            updateThemeButton(document.body.dataset.theme || 'light');
+            if (typeof bindThemeToggle === 'function') bindThemeToggle();
 
             const container = document.getElementById('ff-focus-toggle-container');
             if (container && typeof FocusMode !== 'undefined') {
@@ -861,8 +912,10 @@
 
             if (FocusFlow && FocusFlow.cognition && typeof FocusFlow.updateDashboard === 'function') {
                 const state = FocusFlow.cognition.getState();
-                const strategy = FocusFlow.decision ? FocusFlow.decision.currentDecision?.strategy : null;
-                FocusFlow.updateDashboard(state, strategy || {}, null);
+                const resolved = FocusFlow.decision && FocusFlow.decision.interventionStrategy
+                    ? FocusFlow.decision.interventionStrategy.resolve(state)
+                    : (FocusFlow.decision?.currentDecision?.strategy || { id: 'none' });
+                FocusFlow.updateDashboard(state, resolved, null);
             }
 
             if (FocusFlow && FocusFlow._cameraGateVisible && typeof FocusFlow._showCameraGate === 'function') {
@@ -968,14 +1021,22 @@
             setTimeout(() => document.body.classList.add('ff-webgazer-visible'), 1500);
         }
 
-        function mountWebGazerPreview() {
+        window.mountWebGazerPreview = function mountWebGazerPreview() {
             const preview = document.getElementById('ff-webgazer-preview');
             const container = document.getElementById('webgazerVideoContainer');
-            if (!preview || !container || container.parentElement === preview) return;
-            preview.classList.add('has-webgazer');
-            document.body.classList.add('ff-webgazer-mounted');
-            preview.appendChild(container);
-        }
+            if (!preview || !container) return;
+
+            // Video preview in dashboard; gaze dot (#webgazerGazeDot) stays on document.body.
+            if (container.parentElement !== preview) {
+                preview.classList.add('has-webgazer');
+                document.body.classList.add('ff-webgazer-mounted');
+                preview.appendChild(container);
+            }
+
+            if (FocusFlow && typeof FocusFlow._ensureWebGazerGazeDot === 'function') {
+                FocusFlow._ensureWebGazerGazeDot();
+            }
+        };
 
         async function startCamera() {
             if (FocusFlow.stopMouseTracking) {
@@ -1243,6 +1304,7 @@
             if (isDemoRunning) return;
             
             isDemoRunning = true;
+            FocusFlow._simulationActive = true;
             document.getElementById('btn-toggle-demo').textContent = '⏹️ Stop Demo';
             document.getElementById('btn-toggle-demo').className = 'ff-btn ff-btn-danger';
             
@@ -1265,6 +1327,7 @@
 
         function stopDemo() {
             isDemoRunning = false;
+            FocusFlow._simulationActive = false;
             document.getElementById('btn-toggle-demo').textContent = '🖱️ Start Demo Mode';
             document.getElementById('btn-toggle-demo').className = 'ff-btn ff-btn-primary';
             
@@ -1280,7 +1343,19 @@
             log('⏹️', 'Demo stopped');
         }
 
+        function readingGazeCenter() {
+            const el = document.getElementById('ff-reading-content');
+            if (!el) return { x: window.innerWidth * 0.35, y: window.innerHeight * 0.5 };
+            const r = el.getBoundingClientRect();
+            return { x: r.left + r.width * 0.5, y: r.top + Math.min(r.height * 0.35, r.height - 40) };
+        }
+
+        function sidebarGazePosition() {
+            return { x: window.innerWidth - 120, y: window.innerHeight * 0.45 };
+        }
+
         // ====== DEMO SIMULATION ======
+        const _readingGaze = readingGazeCenter();
         let simState = {
             phase: 0,
             phaseTime: 0,
@@ -1291,27 +1366,36 @@
             mouseMoving: true,
             mouseVelocity: 0.5,
             isPaused: false,
-            gazeX: window.innerWidth / 2,
-            gazeY: window.innerHeight / 2
+            gazeX: _readingGaze.x,
+            gazeY: _readingGaze.y
         };
 
         // Predefined scenario script
         const scenarios = [
             // [duration_ms, name, setup_fn]
             [5000, 'Normal Reading', (s) => {
+                const pos = readingGazeCenter();
+                s.gazeX = pos.x; s.gazeY = pos.y;
                 s.facePresent = true; s.interactionActive = true;
                 s.scrollVelocity = 1.2; s.dwellTime = 2000;
                 s.mouseMoving = true; s.mouseVelocity = 0.3;
+                s.isPaused = false;
             }],
-            [4000, 'Distracted - No Face', (s) => {
+            [4000, 'Distracted - Left Reading', (s) => {
+                const away = sidebarGazePosition();
+                s.gazeX = away.x; s.gazeY = away.y;
                 s.facePresent = false; s.interactionActive = false;
                 s.scrollVelocity = 0; s.dwellTime = 0;
                 s.mouseMoving = false; s.mouseVelocity = 0;
+                s.isPaused = true;
             }],
-            [3000, 'Recovering', (s) => {
+            [3000, 'Return to Reading', (s) => {
+                const pos = readingGazeCenter();
+                s.gazeX = pos.x; s.gazeY = pos.y;
                 s.facePresent = true; s.interactionActive = true;
                 s.scrollVelocity = 0.5; s.dwellTime = 1000;
                 s.mouseMoving = true; s.mouseVelocity = 0.2;
+                s.isPaused = false;
             }],
             [5000, 'Normal Reading', (s) => {
                 s.facePresent = true; s.interactionActive = true;
@@ -1319,12 +1403,14 @@
                 s.mouseMoving = true; s.mouseVelocity = 0.3;
             }],
             [6000, 'Struggling - Long Dwell', (s) => {
+                const pos = readingGazeCenter();
+                s.gazeX = pos.x; s.gazeY = pos.y;
                 s.facePresent = true; s.interactionActive = true;
-                s.scrollVelocity = 0.1; s.dwellTime = 12000;
+                s.scrollVelocity = 0; s.dwellTime = 12000;
                 s.mouseMoving = false; s.mouseVelocity = 0;
                 s.isPaused = true;
             }],
-            [3000, 'Recovering from Struggle', (s) => {
+            [3000, 'Resume after Struggle', (s) => {
                 s.facePresent = true; s.interactionActive = true;
                 s.scrollVelocity = 0.8; s.dwellTime = 3000;
                 s.mouseMoving = true; s.mouseVelocity = 0.4;
@@ -1336,11 +1422,14 @@
                 s.mouseMoving = true; s.mouseVelocity = 0.5;
             }],
             [8000, 'Distracted - Long', (s) => {
+                const away = sidebarGazePosition();
+                s.gazeX = away.x; s.gazeY = away.y;
                 s.facePresent = false; s.interactionActive = false;
                 s.scrollVelocity = 0; s.dwellTime = 0;
                 s.mouseMoving = false; s.mouseVelocity = 0;
+                s.isPaused = true;
             }],
-            [5000, 'Recovering Slowly', (s) => {
+            [5000, 'Return Slowly', (s) => {
                 s.facePresent = true; s.interactionActive = false;
                 s.scrollVelocity = 0.3; s.dwellTime = 2000;
                 s.mouseMoving = true; s.mouseVelocity = 0.1;
@@ -1393,7 +1482,6 @@
                     pitch: 0, yaw: 0, roll: 0,
                     verticalRegion: 'center',
                     horizontalRegion: 'center',
-                    gazeRegion: 'center-center',
                     gazeX: simState.gazeX + (Math.random() - 0.5) * 100,
                     gazeY: simState.gazeY + (Math.random() - 0.5) * 100,
                     currentRegion: 'center-center',
@@ -1425,13 +1513,21 @@
                     dispersion: simState.facePresent ? 50 + Math.random() * 100 : 300 + Math.random() * 200,
                     pointCount: 10,
                     gazeRatio: 0.6,
+                    faceTracking: false,
+                    trackingMode: 'mouse',
                     timestamp: performance.now()
                 };
+
+                FocusFlow._lastGazeX = simState.gazeX;
+                FocusFlow._lastGazeY = simState.gazeY;
+                const enriched = typeof FocusFlow._enrichFeaturesForCognition === 'function'
+                    ? FocusFlow._enrichFeaturesForCognition(features)
+                    : features;
                 
                 // Run through pipeline
-                FocusFlow.cognition.update(features, performance.now());
+                FocusFlow.cognition.update(enriched, performance.now());
                 const state = FocusFlow.cognition.getState();
-                FocusFlow.decision.decide(state, features, {});
+                FocusFlow.decision.decide(state, enriched, {});
                 
             }, 100);
         }
@@ -1459,28 +1555,23 @@
         function updateUI() {
             if (!FocusFlow.cognition || !FocusFlow.decision) return;
             if (document.hidden) return;
+            if (FocusFlow._calibrationInProgress) return;
 
             if (typeof FocusFlow.runCognitionTick === 'function') {
                 FocusFlow.runCognitionTick();
             }
             
             const state = FocusFlow.cognition.getState();
-            const probs = FocusFlow.cognition.getProbabilities();
-            const decision = FocusFlow.decision.getCurrentDecision();
+            const resolved = FocusFlow.decision && FocusFlow.decision.interventionStrategy
+                ? FocusFlow.decision.interventionStrategy.resolve(state)
+                : (FocusFlow.decision.getCurrentDecision()?.strategy || { id: 'none' });
             const profile = FocusFlow.decision.getUserProfile();
             const thresholds = FocusFlow.decision.adaptiveThreshold.getThresholds();
             
-            // Update state display (text via FocusFlow.updateDashboard to avoid i18n flicker)
             if (typeof FocusFlow.updateDashboard === 'function') {
-                const strategy = decision && decision.strategy ? decision.strategy : {};
-                FocusFlow.updateDashboard(state, strategy, null);
+                FocusFlow.updateDashboard(state, resolved, null);
             }
-            updateStateCardStyle(state, probs);
-            
-            // Update strategy
-            if (decision && decision.strategy) {
-                updateStrategyDisplay(decision.strategy);
-            }
+            updateStateCardStyle(state);
             
             // Update profile
             if (profile) {
@@ -1492,9 +1583,6 @@
                 updateThresholdDisplay(thresholds, profile);
             }
             
-            // Update probability chart
-            updateProbChart(probs);
-            
             // Update timeline
             updateTimeline();
             
@@ -1502,58 +1590,53 @@
             updateFeatureDisplay();
         }
 
-        function updateStateCardStyle(state, probs) {
+        function updateStateCardStyle(state) {
             const iconEl = document.getElementById('ff-state-icon');
             const nameEl = document.getElementById('ff-state-name');
             const durEl = document.getElementById('ff-state-duration');
             const confEl = document.getElementById('ff-state-confidence');
-            
+
             if (!state) return;
-            
+
+            const displayState = FocusFlow.decision && FocusFlow.decision.interventionStrategy
+                ? FocusFlow.decision.interventionStrategy.getDisplayState(state)
+                : state.name;
+
             const colors = {
-                'Normal': '#4CAF50',
-                'Distracted': '#FF9800',
-                'Struggling': '#F44336',
-                'Recovering': '#2196F3',
-                'OffScreen': '#9E9E9E'
+                Focus: '#4CAF50',
+                LowDistraction: '#FF9800',
+                HighDistraction: '#F44336',
+                LowStruggling: '#FF5722',
+                HighStruggling: '#D32F2F',
+                Idle: '#94a3b8',
+                Normal: '#4CAF50',
+                Distracted: '#FF9800',
+                Struggling: '#F44336'
             };
             const icons = {
-                'Normal': '🧠',
-                'Distracted': '👀',
-                'Struggling': '🤔',
-                'Recovering': '🔄',
-                'OffScreen': '🚶'
+                Focus: '🧠',
+                LowDistraction: '👀',
+                HighDistraction: '⚠️',
+                LowStruggling: '🤔',
+                HighStruggling: '😓',
+                Idle: '⏳',
+                Normal: '🧠',
+                Distracted: '👀',
+                Struggling: '🤔'
             };
-            
-            if (iconEl) iconEl.textContent = icons[state.name] || '🧠';
-            if (nameEl) nameEl.style.color = colors[state.name] || '#fff';
+
+            if (iconEl) iconEl.textContent = icons[displayState] || '🧠';
+            if (nameEl) nameEl.style.color = colors[displayState] || '#fff';
             if (durEl) durEl.textContent = (state.duration / 1000).toFixed(1);
             if (confEl) {
                 confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
-                confEl.style.backgroundColor = colors[state.name] || '#666';
+                confEl.style.backgroundColor = colors[displayState] || '#666';
             }
-            
+
             const cardState = document.getElementById('card-state');
             if (cardState) {
-                cardState.style.borderColor = colors[state.name] || '#1e293b';
-                cardState.style.boxShadow = `0 0 20px ${colors[state.name]}20`;
-            }
-        }
-
-        function updateStrategyDisplay(strategy) {
-            const nameEl = document.getElementById('ff-strategy-name');
-            const descEl = document.getElementById('ff-strategy-desc');
-            const badgeEl = document.getElementById('ff-escalation-badge');
-            
-            if (nameEl) nameEl.textContent = strategy.name || 'No intervention';
-            if (descEl) descEl.textContent = strategy.description || '';
-            
-            // Escalation level
-            if (badgeEl && FocusFlow.decision) {
-                const level = FocusFlow.decision._getEscalationLevel();
-                badgeEl.textContent = level;
-                badgeEl.style.backgroundColor = level === 'high' ? '#F44336' : 
-                                               level === 'medium' ? '#FF9800' : '#4CAF50';
+                cardState.style.borderColor = colors[displayState] || '#1e293b';
+                cardState.style.boxShadow = `0 0 20px ${colors[displayState] || '#1e293b'}20`;
             }
         }
 
@@ -1586,67 +1669,6 @@
             }
         }
 
-        // ====== PROBABILITY CHART ======
-        function initProbChart() {
-            const ctx = document.getElementById('stateProbChart').getContext('2d');
-            probChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Normal', 'Distracted', 'Struggling', 'Recovering'],
-                    datasets: [{
-                    label: 'Probability',
-                        data: [0.8, 0.05, 0.1, 0.05],
-                        backgroundColor: [
-                            'rgba(76, 175, 80, 0.7)',
-                            'rgba(255, 152, 0, 0.7)',
-                            'rgba(244, 67, 54, 0.7)',
-                            'rgba(33, 150, 243, 0.7)'
-                        ],
-                        borderColor: [
-                            '#4CAF50', '#FF9800', '#F44336', '#2196F3'
-                        ],
-                        borderWidth: 2,
-                        borderRadius: 4,
-                        barThickness: 24
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: { duration: 300 },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            max: 1,
-                            ticks: {
-                                callback: (v) => (v * 100) + '%',
-                                color: '#aaa'
-                            },
-                            grid: { color: '#333' }
-                        },
-                        x: {
-                            ticks: { color: '#ccc', font: { size: 10 } },
-                            grid: { display: false }
-                        }
-                    },
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
-            });
-        }
-
-        function updateProbChart(probs) {
-            if (!probChart || !probs) return;
-            probChart.data.datasets[0].data = [
-                (probs.Normal || 0).toFixed(3),
-                (probs.Distracted || 0).toFixed(3),
-                (probs.Struggling || 0).toFixed(3),
-                (probs.Recovering || 0).toFixed(3)
-            ];
-            probChart.update('none');
-        }
-
         // ====== TIMELINE ======
         function updateTimeline() {
             const container = document.getElementById('ff-timeline');
@@ -1660,7 +1682,7 @@
                 'Normal': '#4CAF50',
                 'Distracted': '#FF9800',
                 'Struggling': '#F44336',
-                'Recovering': '#2196F3'
+                'Idle': '#94a3b8'
             };
             
             let html = '';
@@ -1683,31 +1705,62 @@
 
         // ====== FEATURES DISPLAY ======
         function updateFeatureDisplay() {
-            // Use simState for demo mode since we don't have real perception running
-            if (!isDemoRunning) return;
-            
+            if (isDemoRunning) {
                 document.getElementById('ff-f-face').textContent = simState.facePresent ? '✅ Detected' : '❌ Not detected';
-            document.getElementById('ff-f-face').style.color = simState.facePresent ? '#4CAF50' : '#F44336';
-            
-            document.getElementById('ff-f-pose').textContent = 'Center';
-            
-            document.getElementById('ff-f-region').textContent = 'center-center';
-            
-            document.getElementById('ff-f-mouse').textContent = simState.mouseMoving ? '🖱️ Moving' : '💤 Idle';
-            document.getElementById('ff-f-mouse').style.color = simState.mouseMoving ? '#4CAF50' : '#FF9800';
-            
-            document.getElementById('ff-f-scroll').textContent = simState.isPaused ? '⏸️ Paused' :
-                (simState.scrollVelocity > 0 ? '📜 Scrolling' : '⏸️ Paused');
-            document.getElementById('ff-f-scroll').style.color = simState.scrollVelocity > 0 ? '#4CAF50' : '#FF9800';
-            
-            document.getElementById('ff-f-dwell').textContent = (simState.dwellTime / 1000).toFixed(1) + 's';
-            document.getElementById('ff-f-dwell').style.color = simState.dwellTime > 8000 ? '#F44336' : '#4CAF50';
-            
-            document.getElementById('ff-f-dispersion').textContent = simState.facePresent ? 
-                (50 + Math.random() * 100).toFixed(0) : (300 + Math.random() * 200).toFixed(0);
-            
-            document.getElementById('ff-f-interaction').textContent = simState.interactionActive ? '✅ Active' : '❌ No interaction';
-            document.getElementById('ff-f-interaction').style.color = simState.interactionActive ? '#4CAF50' : '#F44336';
+                document.getElementById('ff-f-face').style.color = simState.facePresent ? '#4CAF50' : '#F44336';
+                document.getElementById('ff-f-pose').textContent = 'Center';
+                document.getElementById('ff-f-region').textContent = 'center-center';
+                document.getElementById('ff-f-mouse').textContent = simState.mouseMoving ? '🖱️ Moving' : '💤 Idle';
+                document.getElementById('ff-f-mouse').style.color = simState.mouseMoving ? '#4CAF50' : '#FF9800';
+                document.getElementById('ff-f-scroll').textContent = simState.isPaused ? '⏸️ Paused' :
+                    (simState.scrollVelocity > 0 ? '📜 Scrolling' : '⏸️ Paused');
+                document.getElementById('ff-f-scroll').style.color = simState.scrollVelocity > 0 ? '#4CAF50' : '#FF9800';
+                document.getElementById('ff-f-dwell').textContent = (simState.dwellTime / 1000).toFixed(1) + 's';
+                document.getElementById('ff-f-dwell').style.color = simState.dwellTime > 8000 ? '#F44336' : '#4CAF50';
+                document.getElementById('ff-f-dispersion').textContent = simState.facePresent ?
+                    (50 + Math.random() * 100).toFixed(0) : (300 + Math.random() * 200).toFixed(0);
+                document.getElementById('ff-f-interaction').textContent = simState.interactionActive ? '✅ Active' : '❌ No interaction';
+                document.getElementById('ff-f-interaction').style.color = simState.interactionActive ? '#4CAF50' : '#F44336';
+                return;
+            }
+
+            if (!FocusFlow.perception || typeof FocusFlow._enrichFeaturesForCognition !== 'function') return;
+            const f = FocusFlow._enrichFeaturesForCognition(FocusFlow.perception.getFeatures());
+
+            document.getElementById('ff-f-face').textContent = f.faceTracking
+                ? (f.facePresent ? '✅ Detected' : '❌ Not detected')
+                : '—';
+            document.getElementById('ff-f-face').style.color = f.facePresent ? '#4CAF50' : '#94a3b8';
+
+            document.getElementById('ff-f-pose').textContent = f.currentRegion || '—';
+
+            if (f.onReadingContent) {
+                document.getElementById('ff-f-region').textContent = '¶' + (f.readingBlockIndex + 1);
+                document.getElementById('ff-f-region').style.color = '#4CAF50';
+            } else if (f.pointerInReadingPanel) {
+                document.getElementById('ff-f-region').textContent = 'In panel';
+                document.getElementById('ff-f-region').style.color = '#FF9800';
+            } else {
+                document.getElementById('ff-f-region').textContent = 'Away';
+                document.getElementById('ff-f-region').style.color = '#F44336';
+            }
+
+            document.getElementById('ff-f-mouse').textContent = f.isMoving ? '🖱️ Moving' : '💤 Idle';
+            document.getElementById('ff-f-mouse').style.color = f.isMoving ? '#4CAF50' : '#FF9800';
+
+            document.getElementById('ff-f-scroll').textContent = f.isScrolling ? '📜 Scrolling' : '⏸️ Paused';
+            document.getElementById('ff-f-scroll').style.color = f.isScrolling ? '#4CAF50' : '#FF9800';
+
+            document.getElementById('ff-f-dwell').textContent = (f.dwellTime / 1000).toFixed(1) + 's';
+            document.getElementById('ff-f-dwell').style.color = f.dwellTime > 8000 ? '#F44336' : '#4CAF50';
+
+            document.getElementById('ff-f-dispersion').textContent = String(Math.round(f.dispersion || 0));
+
+            const ctxLabel = f.onReadingContent ? '📖 On paragraph'
+                : (f.pointerInReadingPanel ? '👁️ In reading area' : '🚶 Left reading');
+            document.getElementById('ff-f-interaction').textContent = ctxLabel;
+            document.getElementById('ff-f-interaction').style.color = f.onReadingContent ? '#4CAF50'
+                : (f.pointerInReadingPanel ? '#FF9800' : '#F44336');
         }
 
         // ====== LOGGING ======
@@ -1978,17 +2031,11 @@
                 if (FocusFlow.analytics) {
                     FocusFlow.analytics.resetSession();
                 }
-                if (FocusFlow._autoTriggeredForBlock) {
-                    FocusFlow._autoTriggeredForBlock = new Set();
-                }
                 if (FocusFlow._blockSummaryCache) {
                     FocusFlow._blockSummaryCache = {};
                 }
                 if (FocusFlow._summaryGenerationInProgress) {
                     FocusFlow._summaryGenerationInProgress = new Set();
-                }
-                if (FocusFlow._assistPrefetchStartedFor) {
-                    FocusFlow._assistPrefetchStartedFor = new Set();
                 }
                 if (FocusFlow.llmSummaryManager) {
                     FocusFlow.llmSummaryManager.reset();
@@ -2021,10 +2068,13 @@
             if (FocusFlow.perception) FocusFlow.perception.reset();
             if (FocusFlow.cognition) FocusFlow.cognition.reset();
             if (FocusFlow.decision) FocusFlow.decision.reset();
-            if (FocusFlow._autoTriggeredForBlock) FocusFlow._autoTriggeredForBlock = new Set();
+            if (typeof InterventionExecutor !== 'undefined') {
+                InterventionExecutor.reset({ focusFlow: FocusFlow });
+            }
+            FocusFlow._lastStrategyId = 'none';
+            FocusFlow._lastActivationKey = 'none';
             if (FocusFlow._blockSummaryCache) FocusFlow._blockSummaryCache = {};
             if (FocusFlow._summaryGenerationInProgress) FocusFlow._summaryGenerationInProgress = new Set();
-            if (FocusFlow._assistPrefetchStartedFor) FocusFlow._assistPrefetchStartedFor = new Set();
             if (FocusFlow.visualEffects) FocusFlow.visualEffects.hideComprehensionCard();
             FocusFlow._comprehensionCardBlock = -1;
             
@@ -2294,7 +2344,6 @@
             <button class="ff-comprehension-close" id="ff-comprehension-close" aria-label="Close">&times;</button>
         </div>
         <div class="ff-comprehension-body" id="ff-comprehension-body"></div>
-        <p class="ff-comprehension-hint" data-i18n="comprehension.hint">Close anytime — use the paragraph button to reopen.</p>
     </div>
 </body>
 </html>

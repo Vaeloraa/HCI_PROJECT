@@ -28,8 +28,8 @@ const I18n = {
             'btn.sessionReport': 'Session Report',
 
             'comprehension.title': 'Paragraph Overview',
-            'comprehension.meta': 'Paragraph {index} · dwelled {seconds}s',
-            'comprehension.hint': 'Close anytime — hover the paragraph and tap the button to reopen.',
+            'comprehension.meta': 'Paragraph {index} · Struggling',
+            'comprehension.hint': '',
             'comprehension.loading': 'Generating overview with AI…',
             'comprehension.generate': 'Summarize',
             'comprehension.reopen': 'Show overview',
@@ -98,19 +98,42 @@ const I18n = {
             'camera.suggest.connectCamera': 'Connect a webcam and make sure it is not disabled in system settings',
 
             'state.title': 'State',
+            'state.cognitive': 'Cognitive State',
+            'state.intervention': 'Intervention',
             'state.focusedReading': 'Focused reading',
             'state.noIntervention': 'No intervention',
             'state.waitingChanges': 'Waiting for state changes...',
             'state.Normal': 'Normal',
             'state.Distracted': 'Distracted',
             'state.Struggling': 'Struggling',
-            'state.Recovering': 'Recovering',
+            'state.Focus': 'Normal',
+            'state.LowDistraction': 'Low Distraction',
+            'state.HighDistraction': 'High Distraction',
+            'state.LowStruggling': 'Low Difficulty',
+            'state.HighStruggling': 'High Difficulty',
+            'state.Idle': 'Transitioning',
             'state.OffScreen': 'Off Screen',
             'state.desc.Normal': 'Focused and reading',
             'state.desc.Distracted': 'Attention drifted away',
             'state.desc.Struggling': 'Having difficulty with content',
-            'state.desc.Recovering': 'Returning to focus',
+            'state.desc.Focus': 'Focused and reading',
+            'state.desc.LowDistraction': 'Attention drifted — under 6s',
+            'state.desc.HighDistraction': 'Attention drifted — over 6s',
+            'state.desc.LowStruggling': 'Stuck on paragraph — under 8s',
+            'state.desc.HighStruggling': 'Stuck on paragraph — over 8s',
+            'state.desc.Idle': 'Waiting for stable state',
             'state.desc.OffScreen': 'Away from screen',
+            'state.hint.Normal': 'Pointer on reading content, engaged',
+            'state.hint.Distracted': 'Left reading area, face absent, or idle away',
+            'state.hint.Struggling': 'Long dwell on paragraph without scroll progress',
+            'state.hint.Focus': 'Pointer/gaze on reading content, engaged',
+            'state.hint.LowDistraction': 'Distraction under 6s — prompt at 6s',
+            'state.hint.HighDistraction': 'Distraction over 6s — alert at 12s',
+            'state.hint.LowStruggling': 'Difficulty under 8s — keywords highlighted',
+            'state.hint.HighStruggling': 'Difficulty over 8s — summary at 8s',
+            'state.hint.Idle': 'Intermediate state — no action, waiting',
+            'state.hint.Distracted.exit': 'Returns when pointer/gaze re-enters reading area',
+            'state.hint.Struggling.exit': 'Leaves when switching paragraph; leaving reading area → distracted',
 
             'metrics.title': 'Attention Metrics',
             'metrics.attention': 'Attention',
@@ -170,8 +193,8 @@ const I18n = {
             'calibration.skip': 'Skip calibration',
             'calibration.complete.title': 'Calibration complete!',
             'calibration.complete.sub': 'Gaze tracking calibrated with {accuracy}px avg. accuracy.',
-            'calibration.skipped.title': 'Using mouse tracking',
-            'calibration.skipped.sub': 'Calibration was skipped. Gaze will follow your mouse cursor.',
+            'calibration.skipped.title': 'Switched to mouse tracking',
+            'calibration.skipped.sub': 'Calibration was skipped. Switched back to mouse mode.',
 
             'prompt.stillThere.title': 'Still there?',
             'prompt.stillThere.sub': "It looks like you stepped away. Come back when you're ready.",
@@ -213,8 +236,36 @@ const I18n = {
             'import.failed': '{count} files could not be parsed: {files}',
 
             'strategy.none': 'No intervention',
-            'strategy.noneDesc': 'No action needed',
+            'strategy.noneDesc': 'Waiting for state changes',
             'strategy.waiting': 'Waiting for state changes...',
+            'strategy.focus.name': 'Focus',
+            'strategy.focus.desc': 'Clear overlays, normal paragraph tracking',
+            'strategy.subtle_overlay.name': 'Subtle Focus Overlay',
+            'strategy.subtle_overlay.desc': 'Semi-transparent overlay to guide attention back',
+            'strategy.floating_prompt.name': 'Floating Prompt',
+            'strategy.floating_prompt.desc': 'Floating message asking to refocus',
+            'strategy.sound_alert.name': 'Sound Alert',
+            'strategy.sound_alert.desc': 'Soft chime to draw attention back',
+            'strategy.keyword_highlight.name': 'Keyword Highlight',
+            'strategy.keyword_highlight.desc': 'Highlight key terms in the content',
+            'strategy.summary_panel.name': 'Summary Panel',
+            'strategy.summary_panel.desc': 'Show a brief summary of current section',
+            'strategy.simplification.name': 'Content Simplification',
+            'strategy.simplification.desc': 'Display simplified version of complex content',
+            'strategy.progress_indicator.name': 'Progress Indicator',
+            'strategy.progress_indicator.desc': 'Show reading progress to encourage continuation',
+            'strategy.positive_feedback.name': 'Positive Feedback',
+            'strategy.positive_feedback.desc': 'Display encouraging message for returning focus',
+
+            'intervention.floating_prompt.title': 'Still there?',
+            'intervention.floating_prompt.sub': 'It looks like you stepped away. Come back when you\'re ready.',
+            'intervention.sound_alert.title': 'Time to refocus!',
+            'intervention.sound_alert.sub': 'You\'ve been away for a while. Pick up where you left off.',
+            'intervention.progress_indicator.title': 'Great progress!',
+            'intervention.progress_indicator.sub': 'You\'ve read {percent}% of this document.',
+            'intervention.positive_feedback.title': 'Welcome back!',
+            'intervention.positive_feedback.sub': 'You\'re back on track. Keep going!',
+
             'escalation.low': 'low',
             'escalation.medium': 'medium',
             'escalation.high': 'high'
@@ -241,8 +292,8 @@ const I18n = {
             'btn.sessionReport': '阅读报告',
 
             'comprehension.title': '📋 段落理解辅助',
-            'comprehension.meta': '第 {index} 段 · 停留 {seconds} 秒',
-            'comprehension.hint': '可随时关闭；鼠标悬停段落，点击按钮可再次查看。',
+            'comprehension.meta': '第 {index} 段 · 阅读困难',
+            'comprehension.hint': '',
             'comprehension.loading': '正在用 AI 生成理解辅助…',
             'comprehension.generate': '生成概述',
             'comprehension.reopen': '再次查看',
@@ -311,19 +362,42 @@ const I18n = {
             'camera.suggest.connectCamera': '请连接摄像头并确认系统设置中未禁用',
 
             'state.title': '认知状态',
+            'state.cognitive': '认知状态',
+            'state.intervention': '干预策略',
             'state.focusedReading': '专注阅读中',
             'state.noIntervention': '无需干预',
             'state.waitingChanges': '等待状态变化...',
             'state.Normal': '正常',
             'state.Distracted': '分心',
             'state.Struggling': '困难',
-            'state.Recovering': '恢复中',
+            'state.Focus': '正常',
+            'state.LowDistraction': '低度分心',
+            'state.HighDistraction': '高度分心',
+            'state.LowStruggling': '低度困难',
+            'state.HighStruggling': '高度困难',
+            'state.Idle': '中间状态',
             'state.OffScreen': '离屏',
             'state.desc.Normal': '专注阅读中',
             'state.desc.Distracted': '注意力已偏离',
             'state.desc.Struggling': '阅读遇到困难',
-            'state.desc.Recovering': '正在恢复专注',
+            'state.desc.Focus': '专注阅读中',
+            'state.desc.LowDistraction': '分心不足 6 秒',
+            'state.desc.HighDistraction': '分心超过 6 秒',
+            'state.desc.LowStruggling': '困难不足 8 秒',
+            'state.desc.HighStruggling': '困难超过 8 秒',
+            'state.desc.Idle': '等待状态稳定',
             'state.desc.OffScreen': '已离开屏幕',
+            'state.hint.Normal': '指针/视线在阅读区，专注阅读中',
+            'state.hint.Distracted': '离开阅读区、人脸消失或长时间未交互',
+            'state.hint.Struggling': '停留在段落上 ≥8s 且未滚动',
+            'state.hint.Focus': '指针/视线在阅读区，专注阅读中',
+            'state.hint.LowDistraction': '分心不足 6 秒，6 秒时弹出提示',
+            'state.hint.HighDistraction': '分心超过 6 秒，12 秒时唤醒提醒',
+            'state.hint.LowStruggling': '困难不足 8 秒，进入时高亮关键词',
+            'state.hint.HighStruggling': '困难超过 8 秒，8 秒时弹出摘要',
+            'state.hint.Idle': '其余情况，无操作，等待中',
+            'state.hint.Distracted.exit': '视线/鼠标回到阅读区后退出',
+            'state.hint.Struggling.exit': '切换段落后退出；离开阅读区一律转入分心',
 
             'metrics.title': '注意力指标',
             'metrics.attention': '注意力',
@@ -383,8 +457,8 @@ const I18n = {
             'calibration.skip': '跳过校准',
             'calibration.complete.title': '校准完成！',
             'calibration.complete.sub': '眼动追踪已校准，平均误差 {accuracy}px。',
-            'calibration.skipped.title': '使用鼠标追踪',
-            'calibration.skipped.sub': '已跳过校准，眼动将跟随鼠标光标。',
+            'calibration.skipped.title': '已切换为鼠标模式',
+            'calibration.skipped.sub': '已跳过校准，自动切换回鼠标追踪模式。',
 
             'prompt.stillThere.title': '还在吗？',
             'prompt.stillThere.sub': '看起来你暂时走开了，准备好了就回来继续阅读吧。',
@@ -426,8 +500,36 @@ const I18n = {
             'import.failed': '{count} 个文件无法解析：{files}',
 
             'strategy.none': '无需干预',
-            'strategy.noneDesc': '当前无需采取行动',
+            'strategy.noneDesc': '等待状态变化',
             'strategy.waiting': '等待状态变化...',
+            'strategy.focus.name': '专心',
+            'strategy.focus.desc': '清除遮罩/高亮，正常段落追踪',
+            'strategy.subtle_overlay.name': '轻柔聚焦遮罩',
+            'strategy.subtle_overlay.desc': '半透明遮罩引导注意力回到正文',
+            'strategy.floating_prompt.name': '浮动提示',
+            'strategy.floating_prompt.desc': '浮动消息提醒重新专注',
+            'strategy.sound_alert.name': '声音提醒',
+            'strategy.sound_alert.desc': '轻柔提示音拉回注意力',
+            'strategy.keyword_highlight.name': '关键词高亮',
+            'strategy.keyword_highlight.desc': '高亮正文中的关键术语',
+            'strategy.summary_panel.name': '摘要面板',
+            'strategy.summary_panel.desc': '显示当前段落的简要摘要',
+            'strategy.simplification.name': '内容简化',
+            'strategy.simplification.desc': '展示复杂内容的简化版本',
+            'strategy.progress_indicator.name': '进度指示',
+            'strategy.progress_indicator.desc': '显示阅读进度以鼓励继续',
+            'strategy.positive_feedback.name': '正向反馈',
+            'strategy.positive_feedback.desc': '显示鼓励信息，肯定重新专注',
+
+            'intervention.floating_prompt.title': '还在吗？',
+            'intervention.floating_prompt.sub': '看起来你暂时走开了，准备好了就回来继续阅读吧。',
+            'intervention.sound_alert.title': '该重新专注了！',
+            'intervention.sound_alert.sub': '你已经离开一段时间了，从上次停下的地方继续吧。',
+            'intervention.progress_indicator.title': '阅读进展不错！',
+            'intervention.progress_indicator.sub': '你已完成全文的 {percent}%。',
+            'intervention.positive_feedback.title': '欢迎回来！',
+            'intervention.positive_feedback.sub': '你已经重新专注，继续保持。',
+
             'escalation.low': '低',
             'escalation.medium': '中',
             'escalation.high': '高'
@@ -500,6 +602,33 @@ const I18n = {
     translateStateDesc(name) {
         const key = `state.desc.${name}`;
         return this.t(key) !== key ? this.t(key) : this.t('state.focusedReading');
+    },
+
+    translateStateHint(name) {
+        const key = `state.hint.${name}`;
+        return this.t(key) !== key ? this.t(key) : this.translateStateDesc(name);
+    },
+
+    translateStrategy(strategy) {
+        if (!strategy || !strategy.id || strategy.id === 'none') {
+            return {
+                name: this.t('strategy.none'),
+                desc: this.t('strategy.noneDesc')
+            };
+        }
+        const nameKey = `strategy.${strategy.id}.name`;
+        const descKey = `strategy.${strategy.id}.desc`;
+        const name = this.t(nameKey);
+        const desc = this.t(descKey);
+        return {
+            name: name !== nameKey ? name : (strategy.name || this.t('strategy.none')),
+            desc: desc !== descKey ? desc : (strategy.description || this.t('strategy.noneDesc'))
+        };
+    },
+
+    translateEscalation(level) {
+        const key = `escalation.${level}`;
+        return this.t(key) !== key ? this.t(key) : level;
     },
 
     applyDocument() {

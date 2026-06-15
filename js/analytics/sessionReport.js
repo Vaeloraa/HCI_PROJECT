@@ -103,9 +103,7 @@ const SessionReport = {
         const colors = {
             Normal: '#4CAF50',
             Distracted: '#FF9800',
-            Struggling: '#F44336',
-            Recovering: '#2196F3',
-            OffScreen: '#9E9E9E'
+            Struggling: '#F44336'
         };
 
         return stateTimeline.slice(-12).map((item) => {

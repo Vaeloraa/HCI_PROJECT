@@ -155,28 +155,10 @@ class AdaptiveThreshold {
             }
             this._lastDistractionStart = null;
         }
-
-        // Recovery time tracking
-        if (currentState.name === 'Recovering' && this._lastRecoveryStart === null) {
-            this._lastRecoveryStart = now;
-        } else if (currentState.name === 'Normal' && this._lastRecoveryStart !== null) {
-            const recoveryTime = now - this._lastRecoveryStart;
-            if (recoveryTime > 500) {
-                this.userStats.recoveryTimes.push({
-                    recoveryTime: recoveryTime,
-                    time: now
-                });
-                if (this.userStats.recoveryTimes.length > this.userStats.maxRecoverySamples) {
-                    this.userStats.recoveryTimes.shift();
-                }
-            }
-            this._lastRecoveryStart = null;
-        }
     }
 
     // Internal state for tracking distraction/recovery starts
     _lastDistractionStart = null;
-    _lastRecoveryStart = null;
 
     /**
      * Adapt thresholds based on collected user statistics

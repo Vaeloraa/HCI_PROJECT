@@ -1,25 +1,19 @@
 /**
  * FocusFlow - Cognitive State Machine
- * 
- * CORE INNOVATION 🔥: Dynamic cognitive state modeling with 
- * probabilistic/rule-based state transitions.
- * 
- * States:
- *   - Normal: User is actively reading/working
- *   - Distracted: User has looked away or stopped interacting
- *   - Struggling: User is stuck on same content (long dwell, no scroll)
- *   - Recovering: User has just returned from distraction
- * 
- * Transitions are based on multi-modal feature fusion (not simple if-else)
- * 
+ *
+ * Context-aware reading states (priority-ordered rules):
+ *   - Distracted:  Leaving reading area overrides Struggling; face/gaze idle rules
+ *   - Struggling:  On a paragraph in reading area, long dwell, no scroll
+ *   - Normal:      Pointer/gaze on reading content, engaged or quietly reading
+ *   - Idle:        All remaining cases
+ *
  * HCI Final Project - Member A
  */
 
 class StateMachine {
     constructor(config) {
         this.config = config;
-        
-        // State definitions
+
         this.STATES = {
             NORMAL: {
                 name: 'Normal',
@@ -39,262 +33,270 @@ class StateMachine {
                 icon: '🤔',
                 description: 'Having difficulty with content'
             },
-            RECOVERING: {
-                name: 'Recovering',
-                color: '#2196F3',
-                icon: '🔄',
-                description: 'Returning to focus'
+            IDLE: {
+                name: 'Idle',
+                color: '#94a3b8',
+                icon: '⏳',
+                description: 'Intermediate state, waiting'
             }
         };
-        
-        // Current state
+
         this._currentState = this.STATES.NORMAL;
         this._previousState = null;
         this._stateStartTime = performance.now();
         this._stateDuration = 0;
-        
-        // State confidence (probability-like)
+        this._strugglingBlockIndex = -1;
+
         this._stateProbabilities = {
-            Normal: 0.8,
+            Normal: 0.85,
             Distracted: 0.05,
             Struggling: 0.1,
-            Recovering: 0.05
+            Idle: 0
         };
-        
-        // History
+
         this.stateHistory = [];
         this._maxHistoryLength = 1000;
-        
-        // Transition thresholds (will be adapted by DecisionLayer)
+
         this.thresholds = {
-            distractionNoFace: 3000,      // 3s without face = distracted
-            distractionNoInteraction: 5000, // 5s without interaction = distracted
-            strugglingDwellTime: 8000,    // 8s on same region = struggling
-            strugglingLowScroll: 0.5,     // Very low scroll velocity
-            recoveringStableTime: 5000,   // 5s stable = back to normal
-            normalTransitionCooldown: 2000 // Min time before state can change
+            distractionNoFace: 3000,
+            distractionLeaveReadingMouse: 4000,
+            distractionLeaveReadingGaze: 8000,
+            distractionGazeScatter: 280,
+            distractionGazeScatterTime: 3000,
+            strugglingDwellTime: 8000,
+            normalTransitionCooldown: 2500,
+            quietReadMin: 1500
         };
-        
-        // Feature smoothing
+
+        this.version = '3.8-paragraph-dwell-reset';
+
         this._featureHistory = [];
-        this._historyMax = 5;
-        
-        // Debug
+        this._historyMax = 8;
         this.debug = config.debug || false;
     }
 
-    /**
-     * Update state machine with new perception features
-     * @param {Object} features - Multi-modal feature vector from PerceptionModule
-     * @param {number} elapsedTime - Current time
-     */
     update(features, elapsedTime) {
         if (!features) return;
-        
+
         const now = performance.now();
         this._stateDuration = now - this._stateStartTime;
-        
-        // Store features for temporal analysis
+
         this._featureHistory.push(features);
         if (this._featureHistory.length > this._historyMax) {
             this._featureHistory.shift();
         }
-        
-        // Compute state probabilities based on current features
+
         const probs = this._computeStateProbabilities(features);
         this._stateProbabilities = probs;
-        
-        // Determine if we should transition
-        const newState = this._decideTransition(probs, features);
-        
+
+        const newState = this._decideTransition(features);
         if (newState && newState !== this._currentState) {
             this._transitionTo(newState, features);
         }
-        
-        // Record history
+
         this.stateHistory.push({
             state: this._currentState.name,
             timestamp: now,
             duration: this._stateDuration,
             probabilities: { ...probs },
             features: {
-                facePresent: features.facePresent,
+                onReadingContent: features.onReadingContent,
+                pointerInReadingPanel: features.pointerInReadingPanel,
                 interactionActive: features.interactionActive,
                 dwellTime: features.dwellTime,
-                scrollVelocity: features.scrollVelocity
+                idleDuration: features.idleDuration,
+                scrollIdleDuration: features.scrollIdleDuration
             }
         });
-        
-        // Trim history
+
         if (this.stateHistory.length > this._maxHistoryLength) {
             this.stateHistory = this.stateHistory.slice(-500);
         }
-        
+
         if (this.debug) {
             this._debugLog(probs);
         }
     }
 
     /**
-     * Compute probability distribution over all states
-     * Based on multi-modal feature fusion (NOT simple if-else)
-     * @param {Object} features
-     * @returns {Object} Probability for each state
+     * Derive reading-context signals used by both rules and probability chart.
      */
-    _computeStateProbabilities(features) {
-        let pNormal = 0;
-        let pDistracted = 0;
-        let pStruggling = 0;
-        let pRecovering = 0;
+    _isGazeMode(features) {
+        if (features.faceTracking === true) return true;
+        return this.config && this.config.trackingMode === 'gaze';
+    }
 
-        const faceTracking = features.faceTracking === true;
-        const dwellSeconds = features.dwellTime / 1000;
-        
-        // --- Evidence for NORMAL state ---
-        const evidenceNormal = [];
-        
-        // Face present strongly suggests normal (eye-tracking mode only)
-        if (faceTracking) {
-            if (features.facePresent) {
-                evidenceNormal.push(0.4);
-            } else {
-                evidenceNormal.push(-0.3);
-            }
-        } else if (features.interactionActive) {
-            evidenceNormal.push(0.25);
-        }
-        
-        // Active interaction suggests normal
-        if (features.interactionActive) {
-            evidenceNormal.push(0.3);
-        } else {
-            evidenceNormal.push(-0.2);
-        }
-        
-        // Smooth reading rhythm
-        if (features.scrollVelocity > 0 && features.scrollVelocity < 2.0) {
-            evidenceNormal.push(0.2);
-        }
-        
-        // Normal gaze dwell time (not too long, not too short)
-        if (dwellSeconds > 1 && dwellSeconds < 6) {
-            evidenceNormal.push(0.1);
-        }
-        
-        // Mouse reading pattern
-        if (features.horizontalMovementRatio > 0.6) {
-            evidenceNormal.push(0.1);
-        }
-        
-        pNormal = this._softMax(evidenceNormal);
-        
-        // --- Evidence for DISTRACTED state ---
-        const evidenceDistracted = [];
-        
-        // No face = very likely distracted (eye-tracking mode)
-        if (faceTracking && !features.facePresent && features.faceAbsentDuration > 2000) {
-            evidenceDistracted.push(0.5);
-        }
-        
-        // No interaction for a while
-        if (!features.interactionActive && !features.isMoving) {
-            evidenceDistracted.push(0.4);
-        }
-        
-        // High idle duration (mouse mode primary signal)
-        if (features.idleDuration > 3000) {
-            evidenceDistracted.push(0.3);
-        }
-        if (!faceTracking && features.idleDuration > 5000) {
-            evidenceDistracted.push(0.35);
-        }
-        
-        // High attention dispersion (gaze jumping around)
-        if (features.dispersion > 200) {
-            evidenceDistracted.push(0.2);
-        }
-        
-        pDistracted = this._softMax(evidenceDistracted);
-        
-        // --- Evidence for STRUGGLING state ---
-        const evidenceStruggling = [];
-        
-        // Very long dwell time on same region
-        if (dwellSeconds > 8) {
-            evidenceStruggling.push(0.5);
-        }
-        
-        // Long pause without scrolling (works in mouse and eye mode)
-        if (!features.isScrolling && features.scrollIdleDuration > 5000 && dwellSeconds > 5) {
-            evidenceStruggling.push(faceTracking && features.facePresent ? 0.3 : 0.25);
-        }
-        
-        // Low scroll velocity while staring at same region
-        if (features.scrollVelocity < 0.5 && dwellSeconds > 5 &&
-            (features.facePresent || !faceTracking)) {
-            evidenceStruggling.push(0.2);
-        }
-        
-        // High direction changes in mouse (searching behavior)
-        if (features.directionChanges > 5 && !features.isReadingPattern) {
-            evidenceStruggling.push(0.1);
-        }
-        
-        pStruggling = this._softMax(evidenceStruggling);
-        
-        // --- Evidence for RECOVERING state ---
-        const evidenceRecovering = [];
-        
-        // Face just returned after absence
-        if (features.facePresent && this._currentState === this.STATES.DISTRACTED) {
-            evidenceRecovering.push(0.4);
-        }
-        
-        // Interaction just resumed
-        if (features.interactionActive && this._wasInactiveBefore()) {
-            evidenceRecovering.push(0.3);
-        }
-        
-        // Scroll just resumed after pause
-        if (features.isScrolling && this._wasPausedBefore()) {
-            evidenceRecovering.push(0.2);
-        }
-        
-        // Confidence bonus if we're in recovering state already
-        if (this._currentState === this.STATES.RECOVERING) {
-            evidenceRecovering.push(0.2);
-        }
-        
-        pRecovering = this._softMax(evidenceRecovering);
-        
-        // Normalize to sum to 1.0
-        const total = pNormal + pDistracted + pStruggling + pRecovering;
-        if (total === 0) {
-            return { Normal: 0.25, Distracted: 0.25, Struggling: 0.25, Recovering: 0.25 };
-        }
-        
+    _readingSignals(features) {
+        const T = this.thresholds;
+        const gazeMode = this._isGazeMode(features);
+        const onRead = features.onReadingContent === true;
+        const inPanel = features.pointerInReadingPanel === true;
+        const idle = features.idleDuration || 0;
+        const dwell = features.paragraphDwellTime ?? features.dwellTime ?? 0;
+        const scrollIdle = features.scrollIdleDuration || 0;
+        const moving = !!features.isMoving;
+        const scrolling = !!features.isScrolling;
+        const facePresent = features.facePresent === true;
+        const recentlyActive = moving || scrolling || idle < 5000;
+
+        const stuckOnParagraph = inPanel && onRead &&
+            dwell >= T.strugglingDwellTime &&
+            !scrolling;
+
+        const leaveThreshold = gazeMode
+            ? T.distractionLeaveReadingGaze
+            : T.distractionLeaveReadingMouse;
+        const leftReadingArea = !inPanel && idle >= leaveThreshold;
+
+        const faceAbsent = gazeMode &&
+            !facePresent &&
+            (features.faceAbsentDuration || 0) >= T.distractionNoFace;
+
+        const gazeScattered = gazeMode &&
+            (features.dispersion || 0) > T.distractionGazeScatter &&
+            !inPanel &&
+            idle >= T.distractionGazeScatterTime;
+
+        const clearlyDistracted = gazeMode
+            ? (faceAbsent || leftReadingArea || gazeScattered)
+            : leftReadingArea;
+
+        const engagedOnContent = inPanel && onRead && (!gazeMode || facePresent);
+
+        const quietlyReading = engagedOnContent &&
+            dwell >= T.quietReadMin &&
+            dwell < T.strugglingDwellTime &&
+            !clearlyDistracted;
+
+        const activelyReading = engagedOnContent &&
+            (recentlyActive || quietlyReading) &&
+            !stuckOnParagraph;
+
         return {
-            Normal: pNormal / total,
-            Distracted: pDistracted / total,
-            Struggling: pStruggling / total,
-            Recovering: pRecovering / total
+            onRead,
+            inPanel,
+            idle,
+            dwell,
+            scrollIdle,
+            moving,
+            scrolling,
+            recentlyActive,
+            stuckOnParagraph,
+            clearlyDistracted,
+            quietlyReading,
+            activelyReading,
+            faceAbsent,
+            leftReadingArea,
+            gazeMode,
+            facePresent
         };
     }
 
     /**
-     * Softmax-like function to convert evidence to probability
-     * @param {Array} evidence - Array of positive/negative evidence values
-     * @returns {number} Probability (0-1)
+     * Leaving the reading panel — distracted overrides Struggling immediately.
      */
-    _softMax(evidence) {
-        if (evidence.length === 0) return 0.05;
-        const sum = evidence.reduce((a, b) => a + b, 0);
-        return 1 / (1 + Math.exp(-sum));
+    _hasLeftReadingArea(sig, currentState) {
+        if (sig.inPanel) return false;
+        if (currentState === 'Struggling') return true;
+        return sig.idle >= this._leaveThreshold(sig);
     }
 
     /**
-     * Resolve state object from display name (e.g. "Distracted" → STATES.DISTRACTED)
+     * Priority: Distracted (leave reading area overrides Struggling) > Struggling > Normal > Idle
      */
+    _classifyTargetState(features) {
+        const current = this._currentState.name;
+        const sig = this._readingSignals(features);
+        const blockIdx = features.readingBlockIndex ?? -1;
+
+        if (sig.clearlyDistracted || this._hasLeftReadingArea(sig, current)) {
+            return this.STATES.DISTRACTED;
+        }
+
+        if (current === 'Struggling') {
+            if (this._strugglingBlockIndex >= 0 && blockIdx >= 0 && blockIdx !== this._strugglingBlockIndex) {
+                if (sig.activelyReading || sig.quietlyReading) {
+                    return this.STATES.NORMAL;
+                }
+                return this.STATES.IDLE;
+            }
+            return this.STATES.STRUGGLING;
+        }
+
+        if (sig.stuckOnParagraph) {
+            return this.STATES.STRUGGLING;
+        }
+
+        if (current === 'Distracted') {
+            if (sig.activelyReading || sig.quietlyReading) {
+                return this.STATES.NORMAL;
+            }
+            return this.STATES.IDLE;
+        }
+
+        if (sig.activelyReading || sig.quietlyReading) {
+            return this.STATES.NORMAL;
+        }
+
+        return this.STATES.IDLE;
+    }
+
+    _computeStateProbabilities(features) {
+        const T = this.thresholds;
+        const sig = this._readingSignals(features);
+        const current = this._currentState.name;
+
+        let normal = 0.12;
+        let distracted = 0.06;
+        let struggling = 0.06;
+        let idle = 0.1;
+
+        if (sig.activelyReading) normal += 0.55;
+        if (sig.quietlyReading) normal += 0.35;
+        if (sig.inPanel && sig.idle < 5000) normal += 0.12;
+        if (sig.scrolling && sig.onRead) normal += 0.1;
+        if (sig.moving && sig.onRead) normal += 0.08;
+        if (current === 'Distracted' && sig.inPanel && !sig.clearlyDistracted) normal += 0.25;
+
+        if (sig.stuckOnParagraph && sig.inPanel) struggling += 0.62;
+        if (sig.inPanel && sig.onRead && sig.dwell > 5000 && !sig.scrolling) struggling += 0.18;
+
+        if (current === 'Struggling' && !sig.inPanel) distracted += 0.4;
+
+        if (sig.clearlyDistracted) distracted += 0.58;
+        if (sig.leftReadingArea) distracted += 0.22;
+        if (sig.faceAbsent) distracted += 0.25;
+        if (sig.gazeMode && sig.leftReadingArea) distracted += 0.2;
+        if (sig.gazeMode && (features.dispersion || 0) > T.distractionGazeScatter && !sig.inPanel) distracted += 0.15;
+
+        if (sig.inPanel && !sig.onRead && !sig.clearlyDistracted && !sig.stuckOnParagraph) idle += 0.35;
+        if (!sig.inPanel && sig.idle < this._leaveThreshold(sig)) idle += 0.2;
+        if (!sig.activelyReading && !sig.quietlyReading && !sig.clearlyDistracted && !sig.stuckOnParagraph) idle += 0.15;
+
+        if (current === 'Normal') normal += 0.08;
+        else if (current === 'Distracted') distracted += 0.06;
+        else if (current === 'Struggling') struggling += 0.06;
+        else if (current === 'Idle') idle += 0.08;
+
+        const total = normal + distracted + struggling + idle;
+        if (total <= 0) {
+            return { Normal: 0.25, Distracted: 0.25, Struggling: 0.25, Idle: 0.25 };
+        }
+
+        return {
+            Normal: normal / total,
+            Distracted: distracted / total,
+            Struggling: struggling / total,
+            Idle: idle / total
+        };
+    }
+
+    _leaveThreshold(sig) {
+        return sig.gazeMode
+            ? this.thresholds.distractionLeaveReadingGaze
+            : this.thresholds.distractionLeaveReadingMouse;
+    }
+
     _getStateByName(name) {
         for (const state of Object.values(this.STATES)) {
             if (state.name === name) return state;
@@ -302,85 +304,53 @@ class StateMachine {
         return null;
     }
 
-    /**
-     * Decide which state to transition to based on probabilities
-     * @param {Object} probs - State probabilities
-     * @param {Object} features - Current features
-     * @returns {Object|null} New state or null if no change
-     */
-    _decideTransition(probs, features) {
-        // Don't transition too frequently (use live clock, not last pipeline tick)
+    _decideTransition(features) {
         const stateDuration = performance.now() - this._stateStartTime;
         if (stateDuration < this.thresholds.normalTransitionCooldown) {
             return null;
         }
 
-        const currentName = this._currentState.name;
-        const faceTracking = features.faceTracking === true;
+        const current = this._currentState.name;
+        const target = this._classifyTargetState(features);
+        const sig = this._readingSignals(features);
 
-        // Clear threshold rules (especially for mouse-only mode)
-        if (!faceTracking) {
-            if (currentName === 'Normal' &&
-                !features.interactionActive &&
-                features.idleDuration >= this.thresholds.distractionNoInteraction) {
-                return this.STATES.DISTRACTED;
-            }
-            if ((currentName === 'Normal' || currentName === 'Distracted') &&
-                features.dwellTime >= this.thresholds.strugglingDwellTime &&
-                !features.isScrolling) {
-                return this.STATES.STRUGGLING;
-            }
-            if (currentName === 'Distracted' && features.interactionActive) {
-                return this.STATES.RECOVERING;
-            }
-            if (currentName === 'Recovering' &&
-                features.interactionActive &&
-                stateDuration >= this.thresholds.recoveringStableTime) {
-                return this.STATES.NORMAL;
-            }
-            if (currentName === 'Struggling' &&
-                (features.isScrolling || features.isMoving)) {
-                return this.STATES.NORMAL;
+        if (!target || target.name === current) {
+            return null;
+        }
+
+        if (current === 'Distracted' && (target.name === 'Normal' || target.name === 'Idle')) {
+            if (!sig.inPanel) {
+                return null;
             }
         }
-        
-        // Get the most probable state (but with hysteresis)
-        let maxProb = 0;
-        let maxState = currentName;
-        
-        for (const [state, prob] of Object.entries(probs)) {
-            // Apply hysteresis - current state gets a bonus
-            const adjustedProb = state === currentName ? prob * 1.3 : prob;
-            if (adjustedProb > maxProb) {
-                maxProb = adjustedProb;
-                maxState = state;
-            }
+
+        if (current === 'Struggling' && target.name === 'Distracted') {
+            return target;
         }
-        
-        // Only transition if probability is high enough
-        if (maxProb > 0.4 && maxState !== currentName) {
-            return this._getStateByName(maxState);
+
+        if (target.name === 'Distracted' && sig.onRead && sig.quietlyReading) {
+            return null;
         }
-        
-        return null;
+
+        return target;
     }
 
-    /**
-     * Execute state transition
-     * @param {Object} newState - Target state
-     * @param {Object} features - Current features
-     */
     _transitionTo(newState, features) {
         const now = performance.now();
         this._previousState = this._currentState;
         this._currentState = newState;
         this._stateStartTime = now;
         this._stateDuration = 0;
-        
+
+        if (newState.name === 'Struggling') {
+            this._strugglingBlockIndex = features.readingBlockIndex ?? -1;
+        } else if (this._previousState.name === 'Struggling') {
+            this._strugglingBlockIndex = -1;
+        }
+
         console.log(`[StateMachine] 🔄 ${this._previousState.name} → ${newState.name} (confidence: ${(this._stateProbabilities[newState.name] * 100).toFixed(0)}%)`);
-        
-        // Dispatch event for other modules
-        const event = new CustomEvent('focusflow-state-change', {
+
+        document.dispatchEvent(new CustomEvent('focusflow-state-change', {
             detail: {
                 previousState: this._previousState,
                 currentState: this._currentState,
@@ -388,138 +358,87 @@ class StateMachine {
                 timestamp: now,
                 features: features
             }
-        });
-        document.dispatchEvent(event);
+        }));
     }
 
-    /**
-     * Check if user was inactive before this update
-     */
     _wasInactiveBefore() {
         if (this._featureHistory.length < 2) return false;
         const prev = this._featureHistory[this._featureHistory.length - 2];
         return prev && !prev.interactionActive;
     }
 
-    /**
-     * Check if user was paused before this update
-     */
     _wasPausedBefore() {
         if (this._featureHistory.length < 2) return false;
         const prev = this._featureHistory[this._featureHistory.length - 2];
         return prev && prev.isPaused;
     }
 
-    /**
-     * Get current state
-     * @returns {Object} Current state object
-     */
     getState() {
         const now = performance.now();
         return {
             ...this._currentState,
-            confidence: this._stateProbabilities[this._currentState.name],
+            confidence: this._stateProbabilities[this._currentState.name] ?? 0.5,
             duration: now - this._stateStartTime,
             startTime: this._stateStartTime,
             timestamp: now
         };
     }
 
-    /**
-     * Get state probabilities
-     * @returns {Object}
-     */
     getProbabilities() {
         return { ...this._stateProbabilities };
     }
 
-    /**
-     * Get recent state history
-     * @param {number} [count=50] - Number of recent entries
-     * @returns {Array}
-     */
     getRecentHistory(count = 50) {
         return this.stateHistory.slice(-Math.min(count, this.stateHistory.length));
     }
 
-    /**
-     * Get time spent in current state
-     * @returns {number} Milliseconds
-     */
     getCurrentStateDuration() {
         return performance.now() - this._stateStartTime;
     }
 
-    /**
-     * Calculate the distribution of states over a time window
-     * @param {number} [timeWindow=300000] - 5 minutes default
-     * @returns {Object} Percentage of time in each state
-     */
     getStateDistribution(timeWindow = 300000) {
         const cutoff = performance.now() - timeWindow;
         const relevant = this.stateHistory.filter(h => h.timestamp > cutoff);
-        
         if (relevant.length === 0) return {};
-        
+
         const counts = {};
         for (const entry of relevant) {
             counts[entry.state] = (counts[entry.state] || 0) + 1;
         }
-        
+
         const total = relevant.length;
         const distribution = {};
         for (const [state, count] of Object.entries(counts)) {
             distribution[state] = (count / total * 100).toFixed(1) + '%';
         }
-        
         return distribution;
     }
 
-    /**
-     * Update personalized thresholds (called by DecisionModule)
-     * @param {Object} newThresholds
-     */
     updateThresholds(newThresholds) {
-        if (newThresholds.distractionNoFace) {
-            this.thresholds.distractionNoFace = newThresholds.distractionNoFace;
-        }
-        if (newThresholds.distractionNoInteraction) {
-            this.thresholds.distractionNoInteraction = newThresholds.distractionNoInteraction;
-        }
-        if (newThresholds.strugglingDwellTime) {
-            this.thresholds.strugglingDwellTime = newThresholds.strugglingDwellTime;
-        }
-        if (newThresholds.recoveringStableTime) {
-            this.thresholds.recoveringStableTime = newThresholds.recoveringStableTime;
-        }
+        Object.assign(this.thresholds, newThresholds);
     }
 
-    /**
-     * Debug logging
-     */
     _debugLog(probs) {
         console.log(`[StateMachine] ${this._currentState.icon} ${this._currentState.name} | ` +
             `N:${(probs.Normal * 100).toFixed(0)}% ` +
             `D:${(probs.Distracted * 100).toFixed(0)}% ` +
             `S:${(probs.Struggling * 100).toFixed(0)}% ` +
-            `R:${(probs.Recovering * 100).toFixed(0)}% ` +
+            `I:${(probs.Idle * 100).toFixed(0)}% ` +
             `| duration: ${(this._stateDuration / 1000).toFixed(1)}s`
         );
     }
 
-    /**
-     * Reset state machine
-     */
     reset() {
         this._currentState = this.STATES.NORMAL;
         this._previousState = null;
         this._stateStartTime = performance.now();
         this._stateDuration = 0;
+        this._strugglingBlockIndex = -1;
         this._stateProbabilities = {
-            Normal: 0.8,
+            Normal: 0.85,
             Distracted: 0.05,
             Struggling: 0.1,
-            Recovering: 0.05
+            Idle: 0
         };
         this.stateHistory = [];
         this._featureHistory = [];

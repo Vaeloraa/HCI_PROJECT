@@ -345,6 +345,7 @@ body::before {
     font-size: var(--reading-font-size);
     color: var(--text-primary);
     position: relative;
+    transition: font-size 0.45s ease, line-height 0.45s ease, letter-spacing 0.45s ease;
 }
 
 .ff-reading-loading {
@@ -359,7 +360,7 @@ body::before {
     margin-bottom: var(--reading-paragraph-gap);
     padding: 6px 12px;
     border-radius: var(--radius-xs);
-    transition: background-color 0.3s, opacity 0.5s, border-color 0.3s;
+    transition: background-color 0.3s, opacity 0.5s, border-color 0.3s, margin-bottom 0.45s ease;
     cursor: default;
     position: relative;
     border: 1px solid transparent;
@@ -467,7 +468,16 @@ body::before {
     border-bottom: none;
 }
 
-/* Comprehension assist card (Member C) */
+/* Keyword highlight (intervention: keyword_highlight) */
+mark.ff-kw-highlight,
+.ff-kw-highlight {
+    background: rgba(250, 204, 21, 0.35);
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
 .ff-comprehension-card {
     position: fixed;
     width: min(360px, calc(100vw - 24px));
@@ -838,6 +848,16 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
     flex-direction: column;
 }
 
+.ff-state-info .ff-state-label,
+.ff-strategy-info .ff-strategy-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    line-height: 1.2;
+}
+
 .ff-state-info .ff-state-name {
     font-size: 20px;
     font-weight: 800;
@@ -866,16 +886,30 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
 
 .ff-strategy-compact {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
-    padding: 6px 0 2px;
+    padding: 8px 0 2px;
     border-top: 1px solid rgba(255, 255, 255, 0.04);
     margin-top: 6px;
     font-size: 12px;
 }
 
-.ff-strategy-compact .ff-strategy-label {
+.ff-strategy-compact .ff-strategy-icon {
     font-size: 16px;
+    line-height: 1;
+    margin-top: 2px;
+}
+
+.ff-strategy-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.ff-strategy-compact .ff-strategy-label {
+    font-size: 10px;
 }
 
 .ff-strategy-compact .ff-strategy-name {
@@ -1490,7 +1524,6 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
 .ff-state-Normal { border-color: var(--accent-normal); }
 .ff-state-Distracted { border-color: var(--accent-distracted); }
 .ff-state-Struggling { border-color: var(--accent-struggling); }
-.ff-state-Recovering { border-color: var(--accent-recovering); }
 
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar {
@@ -1511,21 +1544,99 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
     background: rgba(255, 255, 255, 0.15);
 }
 
+/* ---- App suspended during calibration (reading UI hidden) ---- */
+body.ff-app-suspended .ff-header,
+body.ff-app-suspended .ff-main-layout,
+body.ff-app-suspended #ff-gaze-cursor,
+body.ff-app-suspended .ff-comprehension-card,
+body.ff-app-suspended #ff-camera-gate,
+body.ff-app-suspended .ff-prompt-overlay,
+body.ff-app-suspended .ff-wakeup-overlay {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* WebGazer container: hidden off-screen during calibration (keeps tracking alive, no video UI) */
+body.ff-calibrating #webgazerVideoContainer {
+    position: fixed !important;
+    left: -9999px !important;
+    top: 0 !important;
+    width: 1px !important;
+    height: 1px !important;
+    z-index: -1 !important;
+    display: block !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+    border: 0 !important;
+}
+
+body.ff-calibrating #webgazerVideoFeed,
+body.ff-calibrating #webgazerVideoCanvas,
+body.ff-calibrating #webgazerFaceOverlay,
+body.ff-calibrating #webgazerFaceFeedbackBox {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
+/* Gaze dot must stay visible during calibration */
+body.ff-calibrating #ff-gaze-cursor,
+body.ff-app-suspended.ff-calibrating #ff-gaze-cursor {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 10003 !important;
+    pointer-events: none !important;
+}
+
+body.ff-app-suspended .ff-main-layout {
+    content-visibility: hidden;
+}
+
+/* ---- Calibration full-screen (replaces reading UI) ---- */
+.ff-calibration-screen,
+#ff-calibration-overlay.ff-calibration-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-sans);
+}
+
+.ff-calibration-guide-grid {
+    position: absolute;
+    left: 20%;
+    top: 16%;
+    width: 60%;
+    height: 60%;
+    z-index: 1;
+    pointer-events: none;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 18px;
+    background:
+        linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+        linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% - 0.5px), rgba(148, 163, 184, 0.18) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+}
+
 /* ---- Calibration Overlay ---- */
 #ff-calibration-overlay {
     position: fixed;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    background: rgba(8, 8, 16, 0.94);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: #f8fafc;
     z-index: 9999;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     font-family: var(--font-sans);
-    animation: ff-cal-fade-in 0.5s ease;
 }
 
 @keyframes ff-cal-fade-in {
@@ -1649,7 +1760,8 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
 
 .ff-segment-group,
 .ff-focus-toggle,
-.ff-lang-toggle {
+.ff-lang-toggle,
+.ff-theme-toggle {
     display: inline-flex;
     align-items: center;
     gap: 2px;
@@ -1666,7 +1778,8 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
 
 .ff-segment-btn,
 .ff-focus-toggle-btn,
-.ff-lang-toggle-btn {
+.ff-lang-toggle-btn,
+.ff-theme-toggle-btn {
     padding: 5px 10px;
     border: none;
     border-radius: 6px;
@@ -1688,14 +1801,16 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
 
 .ff-segment-btn:hover,
 .ff-focus-toggle-btn:hover,
-.ff-lang-toggle-btn:hover {
+.ff-lang-toggle-btn:hover,
+.ff-theme-toggle-btn:hover {
     color: var(--text-secondary);
     background: rgba(255, 255, 255, 0.05);
 }
 
 .ff-segment-btn.active,
 .ff-focus-toggle-btn.active,
-.ff-lang-toggle-btn.active {
+.ff-lang-toggle-btn.active,
+.ff-theme-toggle-btn.active {
     background: rgba(99, 102, 241, 0.18);
     color: #a5b4fc;
     box-shadow: 0 0 10px rgba(99, 102, 241, 0.12);
@@ -1706,12 +1821,14 @@ body:not([data-theme="dark"]) .ff-comprehension-body {
     line-height: 1;
 }
 
-/* Language toggle — same width for both options */
-.ff-lang-toggle {
+/* Language / theme toggles — equal width options */
+.ff-lang-toggle,
+.ff-theme-toggle {
     min-width: 0;
 }
 
-.ff-lang-toggle-btn {
+.ff-lang-toggle-btn,
+.ff-theme-toggle-btn {
     flex: 1;
     min-width: 40px;
     padding: 5px 8px;
@@ -3617,7 +3734,20 @@ body.ff-webgazer-visible:not(.ff-webgazer-mounted) #webgazerFaceFeedbackBox {
 }
 
 #webgazerGazeDot {
+    visibility: visible;
+    position: fixed !important;
+    z-index: 99999 !important;
+    pointer-events: none !important;
     border-color: rgba(96, 165, 250, 0.74) !important;
+}
+
+/* Custom gaze cursor disabled — WebGazer #webgazerGazeDot is used instead */
+#ff-gaze-cursor,
+.ff-gaze-cursor {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 /* ---- Theme system: light is the default ---- */
@@ -3715,7 +3845,8 @@ body:not([data-theme="dark"]) .ff-segment-btn {
 
 body:not([data-theme="dark"]) .ff-segment-btn.active,
 body:not([data-theme="dark"]) .ff-focus-toggle-btn.active,
-body:not([data-theme="dark"]) .ff-lang-toggle-btn.active {
+body:not([data-theme="dark"]) .ff-lang-toggle-btn.active,
+body:not([data-theme="dark"]) .ff-theme-toggle-btn.active {
     background: rgba(99, 102, 241, 0.12);
     color: #4f46e5;
 }

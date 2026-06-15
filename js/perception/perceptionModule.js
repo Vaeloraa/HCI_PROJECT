@@ -130,7 +130,9 @@ class PerceptionModule {
         }
 
         const sa = this.scrollAnalyzer;
-        const liveScrollIdle = sa.lastScrollTime > 0 ? now - sa.lastScrollTime : sa.scrollIdleDuration;
+        const liveScrollIdle = sa.lastScrollTime > 0
+            ? now - sa.lastScrollTime
+            : (mt.lastMoveTime > 0 ? now - this._sessionStartTime : 0);
         const liveIsScrolling = liveScrollIdle < 200;
         const liveIsPaused = liveScrollIdle > sa._pauseThreshold;
         const livePauseDuration = liveIsPaused
@@ -169,7 +171,7 @@ class PerceptionModule {
         
         const interactionActive = liveIsMoving ||
                                   liveIsScrolling ||
-                                  liveMouseIdle < 3000;
+                                  liveMouseIdle < 5000;
         
         const dwellTime = gazeFeatures.dwellTime > 0 ? 
                           gazeFeatures.dwellTime : 

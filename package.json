@@ -4,8 +4,9 @@
   "description": "FocusFlow - Adaptive Attention Management System based on WebGazer.js",
   "main": "index.html",
   "scripts": {
-    "serve": "npx http-server . -p 8080 -o",
-    "start": "npx http-server . -p 8080 -o"
+    "serve": "node server/dev-server.js",
+    "start": "node server/dev-server.js",
+    "start:static": "npx http-server . -p 8080 -o"
   },
   "keywords": ["eye-tracking", "attention", "hci", "webgazer"],
   "license": "MIT",

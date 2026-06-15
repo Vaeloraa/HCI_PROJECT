@@ -1,4 +1,4 @@
-/**ig
+/**
  * FocusFlow - Main Application Entry (Full Integration)
  * 
  * HCI Final Project: Adaptive Attention Management System for ADHD Readers
@@ -18,7 +18,12 @@
 
 // Global namespace
 const FocusFlow = {};
-FocusFlow.version = '2.3.0';
+FocusFlow.version = '2.6.0';
+
+FocusFlow._t = function(key, params) {
+    if (typeof I18n !== 'undefined') return I18n.t(key, params);
+    return key;
+};
 
 // Subsystem references
 FocusFlow.perception = null;     // Member A: Gaze tracking
@@ -42,11 +47,11 @@ FocusFlow.gazeScaleY = 1;
 // Configuration
 FocusFlow.config = {
     debug: false,                    // Debug panel disabled by default
-    demoMode: false,                 // Demo mode disabled by default
-    useWebGazer: true,
+    demoMode: true,                  // Mouse tracking by default (no camera)
+    useWebGazer: false,
     saveData: true,
-    showGazeDot: true,               // Gaze dot visible by default
-    trackingMode: 'gaze',
+    showGazeDot: true,               // Gaze dot visible when eye tracking is active
+    trackingMode: 'mouse',
     
     // Calibration config
     calibrationEnabled: true,
@@ -57,10 +62,13 @@ FocusFlow.config = {
     dimIntensity: 0.35,
     dimDelay: 3000,
     
-    // Member C config
-    keywordCount: 5,
-    minWordLength: 3,
-    dwellForKeywords: 8000,
+    // Member C config — dwell-triggered comprehension assist (not keyword cards)
+    dwellForSummary: 10000,
+    summaryBlockConfirmMs: 1500,
+    summaryMaxSentences: 2,
+    llmApiUrl: '/api/summarize',
+    llmStatusUrl: '/api/llm/status',
+    llmConcurrency: 3,
 };
 
 // Gaze dot element reference
@@ -73,9 +81,15 @@ FocusFlow._maxGazeHistory = 10;
 FocusFlow._lastBlockIndex = -1;
 FocusFlow._blockDwellStart = 0;
 FocusFlow._blockChangeTime = 0;
-FocusFlow._blockDwellForScroll = 0;
-FocusFlow._keywordsShownForBlock = new Set();
-FocusFlow._scrollDwellThreshold = 800;
+FocusFlow._autoTriggeredForBlock = new Set();
+FocusFlow._blockSummaryCache = {};
+FocusFlow._paragraphSummaries = {};
+FocusFlow._comprehensionCardBlock = -1;
+FocusFlow._assistCandidateBlock = -1;
+FocusFlow._assistCandidateSince = 0;
+FocusFlow._assistDwellBlock = -1;
+FocusFlow._assistDwellStart = 0;
+FocusFlow._assistPrefetchStartedFor = new Set();
 
 FocusFlow._currentStateName = 'Normal';
 FocusFlow._lastGazeTime = 0;
@@ -95,6 +109,16 @@ FocusFlow._demoMouseHandler = null;
 FocusFlow._demoScrollHandler = null;
 FocusFlow._webGazerStarted = false;
 FocusFlow._webGazerStarting = false;
+FocusFlow._lastDashboardUpdateTs = 0;
+FocusFlow._dashboardUpdateIntervalMs = 200;
+FocusFlow._lastPipelineRunTs = 0;
+FocusFlow._pipelineIntervalMs = 33; // ~30 FPS max processing
+FocusFlow._summaryGenerationInProgress = new Set();
+FocusFlow._allBlockTexts = [];
+FocusFlow._initialized = false;
+FocusFlow._calibrationDone = false;
+FocusFlow._cameraGateVisible = false;
+FocusFlow._cameraStartupInProgress = false;
 
 // Gaze smoothing
 FocusFlow._smoothedGazeX = 0;
@@ -107,23 +131,24 @@ FocusFlow._gazeSampleWindow = 5;     // Moving average window
  * Initialize all FocusFlow subsystems
  */
 FocusFlow.init = async function() {
+    if (this._initialized) return;
     console.log('[FocusFlow] Initializing v' + this.version + '...');
 
-    // 1. Initialize Member A: Perception Layer
+    // 1. Initialize Member B first so default reading content is always visible.
+    this.readingView = new ReadingView(this.config);
+    console.log('[FocusFlow] ✅ Member B - Reading View loaded');
+
+    // 2. Initialize Member A: Perception Layer
     this.perception = new PerceptionModule(this.config);
     console.log('[FocusFlow] ✅ Member A - Perception Layer loaded');
 
-    // 2. Initialize Member A: Cognitive State Machine
+    // 3. Initialize Member A: Cognitive State Machine
     this.cognition = new StateMachine(this.config);
     console.log('[FocusFlow] ✅ Member A - Cognitive State Machine loaded');
 
-    // 3. Initialize Member A: Decision Module
+    // 4. Initialize Member A: Decision Module
     this.decision = new DecisionModule(this.config);
     console.log('[FocusFlow] ✅ Member A - Decision Layer loaded');
-
-    // 4. Initialize Member B: Reading View
-    this.readingView = new ReadingView(this.config);
-    console.log('[FocusFlow] ✅ Member B - Reading View loaded');
 
     // 5. Initialize Member B: Visual Effects
     this.visualEffects = new VisualEffects(this.config);
@@ -138,81 +163,47 @@ FocusFlow.init = async function() {
     this.debugPanel = new DebugPanel();
     console.log('[FocusFlow] ✅ Member B - Debug Panel loaded');
 
-    // 8. Initialize Member C: Keyword Extractor
+    // 8. Initialize Member C: NLP + Analytics
     this.keywordExtractor = new KeywordExtractor(this.config);
-    console.log('[FocusFlow] ✅ Member C - Keyword Extractor loaded');
+    console.log('[FocusFlow] ✅ Member C - Keyword Extractor loaded (internal scoring)');
 
-    // 9. Initialize Member C: Attention Analytics
     this.analytics = new AttentionAnalytics(this.config);
     console.log('[FocusFlow] ✅ Member C - Attention Analytics loaded');
 
-    // 8. Initialize the reading content with all block word counts
+    // 9. Initialize Member C: LLM summary manager
+    this.llmSummaryManager = new LLMSummaryManager(this.config);
+    await this.llmSummaryManager.init();
+    this.config.llmEnabled = this.llmSummaryManager.isEnabled();
+    console.log('[FocusFlow] ✅ Member C - LLM Summary', this.config.llmEnabled ? 'enabled' : 'fallback mode');
+
+    // 10. Initialize the reading content with all block word counts
     this._initBlockWordCounts();
+    this._precomputeParagraphSummaries();
 
-    // 9. Detect whether we are running in a secure context.
-    //    getUserMedia (and therefore WebGazer's camera tracking) only works on
-    //    https:// or http://localhost. Opening index.html directly via file://
-    //    blocks the camera API, so we must warn the user and fall back to mouse.
-    const isLocalFile = location.protocol === 'file:';
-    const isSecureContext = !isLocalFile && (
-        window.isSecureContext ||
-        location.protocol === 'https:' ||
-        location.hostname === 'localhost' ||
-        location.hostname === '127.0.0.1'
-    );
-
-    if (this.config.useWebGazer && !this.config.demoMode) {
-        if (isLocalFile || !isSecureContext) {
-            console.warn('[FocusFlow] ⚠️ Unsafe context (file:// or non-localhost); camera API unavailable');
-            this._reportApiError(
-                'WebGazer / Camera',
-                'The page is opened through file://, so the browser blocks camera access',
-                [
-                    '• Use a local server instead (recommended):',
-                    '   In the project folder, run  npx http-server -p 8080  or  python -m http.server 8080',
-                    '   Then open  http://localhost:8080  in the browser',
-                    '• Calibration will run in Mouse Mode; the 9 calibration points will still appear'
-                ]
-            );
-            this.config.demoMode = false;
-            this.config.useWebGazer = true;
-            this.config.trackingMode = 'runtime-error';
-            this._announceTrackingMode('runtime-error', 'file protocol blocks camera/model loading');
-        } else {
-            await this.startWebGazer();
+    document.addEventListener('focusflow-state-change', (event) => {
+        const detail = event.detail || {};
+        if (this.analytics && detail.currentState) {
+            this.analytics.recordStateTransition(detail.previousState, detail.currentState);
         }
+    });
 
-        // 10. Run the 9-point calibration regardless of webgazer/mouse mode.
-        //     In mouse mode the user moves the cursor to each point; in webgazer
-        //     mode they look at each point. Either way the 9 points are shown.
-        if (this.config.calibrationEnabled && this.config.trackingMode === 'gaze') {
-            await this._runCalibration();
-        }
-
-        // 11. Set up the real gaze listener (only if WebGazer actually started)
-        if (this.config.trackingMode === 'gaze') {
-            this._setupGazeListener();
-        }
-    } else {
-        this.startDemoMode();
-
-        // Still offer calibration in pure demo mode for a consistent experience
-        if (this.config.calibrationEnabled) {
-            await this._runCalibration();
-        }
-    }
+    // 9. Input tracking — mouse by default; camera only after user enables eye tracking.
+    this.startMouseTracking();
+    this._announceTrackingMode('mouse', 'default');
 
 
     // 12. Show welcome prompt
     setTimeout(() => {
         this.visualEffects.showPrompt(
             '👋',
-            'Welcome to FocusFlow!',
-            'Your adaptive reading assistant. Start reading naturally.'
+            this._t('welcome.title'),
+            this._t('welcome.sub')
         );
     }, 1500);
 
     console.log('[FocusFlow] 🚀 All systems ready!');
+    this._removeLegacyKeywordPanels();
+    this._initialized = true;
 };
 
 /**
@@ -220,16 +211,197 @@ FocusFlow.init = async function() {
  */
 FocusFlow._initBlockWordCounts = function() {
     const blocks = this.readingView.blockElements;
+    this._allBlockTexts = [];
+
+    if (this.keywordExtractor) {
+        this.keywordExtractor.reset();
+    }
+
     for (let i = 0; i < blocks.length; i++) {
         const text = blocks[i].textContent || '';
+        this._allBlockTexts.push(text);
         const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
         this.analytics.setBlockWordCount(i, wordCount);
+        if (this.keywordExtractor) {
+            this.keywordExtractor.updateVocabulary(text);
+        }
     }
 };
 
 /**
- * Run the 9-point calibration procedure
- * This asks the user to look at 9 points on screen to calibrate WebGazer
+ * Precompute paragraph summaries in the background for faster assist cards.
+ */
+FocusFlow._precomputeParagraphSummaries = async function() {
+    this._paragraphSummaries = {};
+    const docLang = this.readingView && typeof this.readingView.getDocumentLang === 'function'
+        ? this.readingView.getDocumentLang()
+        : 'en';
+
+    if (this.llmSummaryManager) {
+        this.llmSummaryManager.setDocumentLang(docLang);
+        if (this.llmSummaryManager.isEnabled()) {
+            this.llmSummaryManager.preloadDocument(this._allBlockTexts, docLang);
+            return;
+        }
+    }
+
+    if (typeof ParagraphSummarizer === 'undefined') return;
+    this._allBlockTexts.forEach((text, index) => {
+        window.setTimeout(() => {
+            this._paragraphSummaries[index] = ParagraphSummarizer.summarize(text, { lang: docLang });
+        }, index * 8);
+    });
+};
+
+/**
+ * Attempt to start WebGazer eye tracking (user gesture required).
+ * Does not fall back to mouse — caller handles failure.
+ * @returns {Promise<boolean>}
+ */
+FocusFlow._tryStartEyeTracking = async function() {
+    if (typeof CameraAccess === 'undefined') {
+        this._showCameraGate('unsupported');
+        return false;
+    }
+
+    if (!CameraAccess.isSupported()) {
+        this._showCameraGate('unsupported');
+        return false;
+    }
+
+    if (!CameraAccess.isSecureEnough()) {
+        this._showCameraGate('file');
+        return false;
+    }
+
+    const started = await this.startWebGazer({ force: true });
+    if (!started) {
+        this._showCameraGate('denied');
+        return false;
+    }
+
+    return true;
+};
+
+/**
+ * @deprecated Auto-start removed — eye tracking begins only via enableCameraTracking().
+ */
+FocusFlow._bootstrapCameraTracking = async function() {
+    return this.enableCameraTracking();
+};
+
+/**
+ * Run calibration and gaze listener after WebGazer is live.
+ */
+FocusFlow._finishCameraStartup = async function() {
+    if (this.config.trackingMode !== 'gaze') return;
+
+    if (this.config.calibrationEnabled && !this._calibrationDone) {
+        try {
+            await this._runCalibration();
+        } catch (err) {
+            console.warn('[FocusFlow] Calibration failed, continuing:', err);
+        }
+    }
+
+    this._setupGazeListener();
+};
+
+/**
+ * User-gesture entry point for enabling camera tracking (gate button / retry).
+ */
+FocusFlow.enableCameraTracking = async function() {
+    if (this._cameraStartupInProgress) return false;
+    this._cameraStartupInProgress = true;
+
+    const gateBtn = document.getElementById('ff-camera-gate-btn');
+    if (gateBtn) {
+        gateBtn.disabled = true;
+        gateBtn.textContent = this._t('camera.gate.working');
+    }
+
+    try {
+        this.stopMouseTracking();
+        this.config.useWebGazer = true;
+        this.config.demoMode = false;
+
+        const started = await this._tryStartEyeTracking();
+        if (!started) {
+            this.switchToMouseTracking('camera unavailable');
+            return false;
+        }
+
+        this._hideCameraGate();
+        await this._finishCameraStartup();
+        return true;
+    } finally {
+        this._cameraStartupInProgress = false;
+        if (gateBtn) {
+            gateBtn.disabled = false;
+            gateBtn.textContent = this._cameraGateReason === 'denied'
+                ? this._t('camera.gate.retry')
+                : this._t('camera.gate.enable');
+        }
+    }
+};
+
+FocusFlow._showCameraGate = function(reason) {
+    this._cameraGateReason = reason || 'prompt';
+    let gate = document.getElementById('ff-camera-gate');
+    if (!gate) {
+        gate = document.createElement('div');
+        gate.id = 'ff-camera-gate';
+        gate.className = 'ff-camera-gate';
+        gate.innerHTML = `
+            <div class="ff-camera-gate__card">
+                <div class="ff-camera-gate__icon">📷</div>
+                <h2 class="ff-camera-gate__title" data-i18n="camera.gate.title"></h2>
+                <p class="ff-camera-gate__text" id="ff-camera-gate-text"></p>
+                <button type="button" id="ff-camera-gate-btn" class="ff-btn ff-btn-primary"></button>
+            </div>
+        `;
+        document.body.appendChild(gate);
+
+        const btn = gate.querySelector('#ff-camera-gate-btn');
+        btn.addEventListener('click', () => this.enableCameraTracking());
+    }
+
+    const title = gate.querySelector('.ff-camera-gate__title');
+    const text = gate.querySelector('#ff-camera-gate-text');
+    const btn = gate.querySelector('#ff-camera-gate-btn');
+    const reasonKey = {
+        denied: 'camera.gate.denied',
+        file: 'camera.gate.file',
+        unsupported: 'camera.gate.unsupported',
+        prompt: 'camera.gate.prompt',
+        unknown: 'camera.gate.prompt'
+    }[this._cameraGateReason] || 'camera.gate.prompt';
+
+    if (title) title.textContent = this._t('camera.gate.title');
+    if (text) text.textContent = this._t(reasonKey);
+    if (btn) {
+        btn.textContent = this._cameraGateReason === 'denied'
+            ? this._t('camera.gate.retry')
+            : this._t('camera.gate.enable');
+        btn.disabled = this._cameraGateReason === 'file' || this._cameraGateReason === 'unsupported';
+    }
+
+    gate.hidden = false;
+    gate.classList.add('is-visible');
+    this._cameraGateVisible = true;
+};
+
+FocusFlow._hideCameraGate = function() {
+    const gate = document.getElementById('ff-camera-gate');
+    if (!gate) return;
+    gate.hidden = true;
+    gate.classList.remove('is-visible');
+    this._cameraGateVisible = false;
+};
+
+/**
+ * Run the 9-point calibration procedure.
+ * This asks the user to look at 9 points on screen to calibrate WebGazer.
  */
 FocusFlow._runCalibration = function() {
     return new Promise((resolve) => {
@@ -271,19 +443,21 @@ FocusFlow._runCalibration = function() {
                         // Show success message
                         this.visualEffects.showPrompt(
                             '🎯',
-                            'Calibration complete!',
-                            `Gaze tracking calibrated with ${results.accuracy.toFixed(0)}px avg. accuracy.`
+                            this._t('calibration.complete.title'),
+                            this._t('calibration.complete.sub', { accuracy: results.accuracy.toFixed(0) })
                         );
                     }
+                    this._calibrationDone = true;
                 } else {
                     // Calibration was skipped
                     console.log('[FocusFlow] ⏭️ Calibration skipped, using raw gaze data');
                     this.visualEffects.showPrompt(
                         '🖱️',
-                        'Using mouse tracking',
-                        'Calibration was skipped. Gaze will follow your mouse cursor.'
+                        this._t('calibration.skipped.title'),
+                        this._t('calibration.skipped.sub')
                     );
                 }
+                this._calibrationDone = true;
                 
                 resolve();
             },
@@ -297,57 +471,67 @@ FocusFlow._runCalibration = function() {
 };
 
 /**
- * Set up WebGazer with FocusFlow integration
- * Enhanced with detailed error reporting for getUserMedia / camera API failures
+ * Set up WebGazer with FocusFlow integration.
+ * Preflights camera permission before WebGazer.begin() for cross-browser reliability.
+ * @returns {Promise<boolean>} true when gaze tracking is active
  */
-FocusFlow.startWebGazer = async function() {
-    return new Promise((resolve) => {
-        if (this._webGazerStarted || this._webGazerStarting) {
-            this.config.demoMode = false;
-            this.config.useWebGazer = true;
-            this.config.trackingMode = 'gaze';
-            this._announceTrackingMode('gaze');
-            resolve();
-            return;
-        }
+FocusFlow.startWebGazer = async function(options) {
+    const force = !!(options && options.force);
 
-        // --- Pre-check: browser camera API availability ---
-        if (location.protocol === 'file:') {
-            this._webGazerStarted = false;
-            this._webGazerStarting = false;
-            this.config.demoMode = false;
-            this.config.useWebGazer = true;
-            this.config.trackingMode = 'runtime-error';
-            this._announceTrackingMode('runtime-error', 'file protocol blocks camera/model loading');
-            resolve();
-            return;
-        }
+    if (this._webGazerStarted && !force) {
+        this.config.demoMode = false;
+        this.config.useWebGazer = true;
+        this.config.trackingMode = 'gaze';
+        this._announceTrackingMode('gaze');
+        return true;
+    }
 
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.warn('[FocusFlow] ⚠️ getUserMedia API unavailable (non-HTTPS or unsupported browser)');
-            this._reportApiError(
-                'WebGazer / getUserMedia',
-                'Browser camera API (getUserMedia) unavailable',
-                [
-                    '• Use HTTPS or http://localhost',
-                    '• Or use the latest Chrome / Edge / Firefox',
-                    '• Automatically switched to Demo Mode (mouse simulation)'
-                ]
-            );
-            this.config.demoMode = false;
-            this.config.useWebGazer = true;
-            this.config.trackingMode = 'camera-error';
-            this._announceTrackingMode('camera-error', 'camera api unavailable');
-            resolve();
-            return;
-        }
-        
+    if (this._webGazerStarting) {
+        return false;
+    }
+
+    if (typeof CameraAccess === 'undefined') {
+        this._setCameraError('camera-error', 'camera helper unavailable');
+        return false;
+    }
+
+    if (!CameraAccess.isSupported()) {
+        this._reportApiError(
+            'WebGazer / Camera',
+            'Browser camera API (getUserMedia) unavailable',
+            CameraAccess._suggestionsFor('unsupported')
+        );
+        this._setCameraError('camera-error', 'camera api unavailable');
+        return false;
+    }
+
+    if (!CameraAccess.isSecureEnough()) {
+        this._setCameraError('runtime-error', 'file protocol blocks camera/model loading');
+        return false;
+    }
+
+    this._webGazerStarting = true;
+
+    try {
+        const stream = await CameraAccess.request();
+        CameraAccess.release(stream);
+    } catch (err) {
+        const classified = err.code ? err : CameraAccess.classifyError(err);
+        this._reportApiError('WebGazer / Camera', classified.summary, classified.suggestions);
+        this._webGazerStarting = false;
+        this._setCameraError('camera-error', classified.code || 'permission denied');
+        return false;
+    }
+
+    if (force && this._webGazerStarted && typeof webgazer !== 'undefined' && typeof webgazer.end === 'function') {
         try {
-            this._webGazerStarting = true;
-            // Keep WebGazer's video preview + green face-mesh overlay visible
-            // (this is the green tracking grid the user expects). Prediction
-            // points stay off to avoid clutter. The video preview is positioned
-            // by WebGazer itself; our sidebar canvas is a separate, lighter view.
+            await webgazer.end();
+        } catch (_) { /* ignore */ }
+        this._webGazerStarted = false;
+    }
+
+    return new Promise((resolve) => {
+        try {
             webgazer
                 .setRegression('ridge')
                 .saveDataAcrossSessions(true)
@@ -357,7 +541,6 @@ FocusFlow.startWebGazer = async function() {
                 .showVideoPreview(true)
                 .showPredictionPoints(this.config.showGazeDot && this.config.trackingMode !== 'mouse')
                 .begin()
-
                 .then(() => {
                     this._webGazerStarted = true;
                     this._webGazerStarting = false;
@@ -366,120 +549,40 @@ FocusFlow.startWebGazer = async function() {
                     this.config.trackingMode = 'gaze';
                     this._announceTrackingMode('gaze');
                     console.log('[FocusFlow] ✅ WebGazer started successfully');
-                    resolve();
+                    resolve(true);
                 })
                 .catch((err) => {
-                    const msg = (err && err.message) || (err && err.toString()) || 'Unknown error';
-                    console.error('[FocusFlow] ❌ WebGazer failed:', msg);
-                    
-                    // Classify WebGazer error for user-friendly message
-                    if (msg.includes('getUserMedia') || msg.includes('NotAllowed') || msg.includes('Permission')) {
-                        this._reportApiError(
-                            'WebGazer / Camera',
-                            'Camera permission denied - ' + msg,
-                            [
-                                '• Click the lock icon in the address bar and allow camera permission',
-                                '• If permission was denied repeatedly, reset camera permission in browser settings',
-                                '• Automatically switched to Demo Mode (mouse simulation)'
-                            ]
-                        );
-                    } else if (msg.includes('NotReadable') || msg.includes('NotFound')) {
-                        this._reportApiError(
-                            'WebGazer / Camera',
-                            'Camera device unavailable - ' + msg,
-                            [
-                                '• Check that the camera is connected correctly',
-                                '• Close other apps using the camera, such as Zoom or Teams',
-                                '• Automatically switched to Demo Mode'
-                            ]
-                        );
-                    } else {
-                        this._reportApiError(
-                            'WebGazer',
-                            'Startup failed: ' + msg,
-                            [
-                                '• Automatically switched to Demo Mode (mouse simulation)',
-                                '• You can continue using all features'
-                            ]
-                        );
-                    }
-                    
+                    const classified = CameraAccess.classifyError(err);
+                    console.error('[FocusFlow] ❌ WebGazer failed:', classified.summary);
+                    this._reportApiError('WebGazer / Camera', classified.summary, classified.suggestions);
                     this._webGazerStarted = false;
                     this._webGazerStarting = false;
-                    this.config.demoMode = false;
-                    this.config.useWebGazer = true;
-                    this.config.trackingMode = 'camera-error';
-                    this._announceTrackingMode('camera-error', 'webgazer failed');
-                    resolve();
+                    this._setCameraError('camera-error', 'webgazer failed');
+                    resolve(false);
                 });
         } catch (e) {
-            const msg = (e && e.message) || (e && e.toString()) || 'Unknown error';
-            console.error('[FocusFlow] ❌ WebGazer init error:', msg);
-            
-            this._reportApiError(
-                'WebGazer',
-                'Initialization exception: ' + msg,
-                [
-                    '• Automatically switched to Demo Mode (mouse simulation)',
-                    '• You can continue using all features'
-                ]
-            );
-            
+            const classified = CameraAccess.classifyError(e);
+            console.error('[FocusFlow] ❌ WebGazer init error:', classified.summary);
+            this._reportApiError('WebGazer', classified.summary, classified.suggestions);
             this._webGazerStarted = false;
             this._webGazerStarting = false;
-            this.config.demoMode = false;
-            this.config.useWebGazer = true;
-            this.config.trackingMode = 'camera-error';
-            this._announceTrackingMode('camera-error', 'webgazer init error');
-            resolve();
+            this._setCameraError('camera-error', 'webgazer init error');
+            resolve(false);
         }
     });
 };
 
-/**
- * Report an API failure to the user via visualEffects and console
- * @param {string} apiName - Name of the API that failed
- * @param {string} summary - Brief error summary
- * @param {string[]} suggestions - List of actionable suggestions
- */
-FocusFlow._reportApiError = function(apiName, summary, suggestions) {
-    console.error(`[FocusFlow] ❌ API call failed [${apiName}]: ${summary}`);
-    if (suggestions) {
-        suggestions.forEach(s => console.warn('[FocusFlow] 💡', s));
-    }
-    
-    // Try to show via visualEffects if available
-    if (this.visualEffects && typeof this.visualEffects.showPrompt === 'function') {
-        setTimeout(() => {
-            this.visualEffects.showPrompt(
-                '⚠️',
-                `${apiName} call failed`,
-                summary + ' — switched to Demo Mode'
-            );
-        }, 500);
-    }
-    
-    // Also dispatch a custom event for the page-level error handler
-    const event = new CustomEvent('focusflow-api-error', {
-        detail: { api: apiName, summary, suggestions }
-    });
-    document.dispatchEvent(event);
+FocusFlow._setCameraError = function(mode, reason) {
+    this.switchToMouseTracking(reason || mode);
 };
 
+/**
+ * Report an API failure to the user via visualEffects and console.
+ */
 FocusFlow._reportApiError = function(apiName, summary, suggestions) {
     console.error(`[FocusFlow] API issue [${apiName}]: ${summary}`);
     if (suggestions) {
         suggestions.forEach(s => console.warn('[FocusFlow]', s));
-    }
-
-    if (this.visualEffects && typeof this.visualEffects.showPrompt === 'function') {
-        setTimeout(() => {
-            this.visualEffects.showPrompt(
-                '⚠',
-                `${apiName} needs attention`,
-                summary + '. Check camera permission and retry.'
-            );
-        }, 500);
     }
 
     document.dispatchEvent(new CustomEvent('focusflow-api-error', {
@@ -496,9 +599,12 @@ FocusFlow._announceTrackingMode = function(mode, reason) {
 FocusFlow.switchToMouseTracking = function(reason) {
     this._webGazerStarted = false;
     this._webGazerStarting = false;
-    this.config.demoMode = true;
-    this.config.useWebGazer = false;
-    this.config.trackingMode = 'mouse';
+
+    try {
+        if (window.webgazer && typeof window.webgazer.end === 'function') {
+            webgazer.end();
+        }
+    } catch (e) {}
 
     try {
         if (window.webgazer && typeof window.webgazer.showPredictionPoints === 'function') {
@@ -506,7 +612,11 @@ FocusFlow.switchToMouseTracking = function(reason) {
         }
     } catch (e) {}
 
-    this.startDemoMode();
+    this.config.demoMode = true;
+    this.config.useWebGazer = false;
+    this.config.trackingMode = 'mouse';
+
+    this.startMouseTracking();
     this._announceTrackingMode('mouse', reason);
 };
 
@@ -618,9 +728,9 @@ FocusFlow._smoothGaze = function(data) {
 };
 
 /**
- * Demo mode: simulate gaze data with mouse for testing
+ * Mouse-based gaze simulation — default input when eye tracking is off.
  */
-FocusFlow.startDemoMode = function() {
+FocusFlow.startMouseTracking = function() {
     this.config.demoMode = true;
     this.config.useWebGazer = false;
     this.config.trackingMode = 'mouse';
@@ -628,8 +738,8 @@ FocusFlow.startDemoMode = function() {
     if (this._demoMouseHandler) {
         return;
     }
-    console.log('[FocusFlow] 🖱️ Starting demo mode (mouse-based simulation)');
-    
+    console.log('[FocusFlow] 🖱️ Mouse tracking active (no camera)');
+
     this._demoMouseHandler = (e) => {
         const demoData = {
             x: e.clientX,
@@ -640,31 +750,62 @@ FocusFlow.startDemoMode = function() {
             }
         };
         const elapsedTime = performance.now();
-        
-        // Simulate face presence with occasional dropouts
-        this.perception.facePresent = Math.random() > 0.05;
         this.onGazeData(demoData, elapsedTime);
     };
     document.addEventListener('mousemove', this._demoMouseHandler);
-    
-    // Simulate scroll
+
     this._demoScrollHandler = () => {
-        this.perception.lastScrollTime = performance.now();
-        this.perception.scrollVelocity = Math.abs(window.scrollY - (this.perception._lastScrollY || 0));
-        this.perception._lastScrollY = window.scrollY;
+        const readingEl = document.getElementById('ff-reading-content');
+        const scrollY = readingEl ? readingEl.scrollTop : window.scrollY;
+        if (this.perception && this.perception.scrollAnalyzer) {
+            this.perception.scrollAnalyzer.update(scrollY, 0);
+        }
     };
+    const readingEl = document.getElementById('ff-reading-content');
+    if (readingEl) {
+        readingEl.addEventListener('scroll', this._demoScrollHandler, { passive: true });
+    }
     window.addEventListener('scroll', this._demoScrollHandler);
 };
 
-FocusFlow.stopDemoMode = function() {
+/**
+ * Periodic cognition update — keeps state machine and duration accurate without gaze/mouse movement.
+ */
+FocusFlow.runCognitionTick = function() {
+    if (!this._initialized || !this.perception || !this.cognition || !this.decision) return;
+    if (document.hidden) return;
+
+    const now = performance.now();
+    const features = this.perception.getFeatures();
+    this.cognition.update(features, now);
+    const state = this.cognition.getState();
+    this._currentStateName = state.name;
+    this.decision.decide(state, features, {});
+};
+
+FocusFlow.stopMouseTracking = function() {
     if (this._demoMouseHandler) {
         document.removeEventListener('mousemove', this._demoMouseHandler);
         this._demoMouseHandler = null;
     }
     if (this._demoScrollHandler) {
         window.removeEventListener('scroll', this._demoScrollHandler);
+        const readingEl = document.getElementById('ff-reading-content');
+        if (readingEl) {
+            readingEl.removeEventListener('scroll', this._demoScrollHandler);
+        }
         this._demoScrollHandler = null;
     }
+};
+
+/** @deprecated Use startMouseTracking */
+FocusFlow.startDemoMode = function() {
+    this.startMouseTracking();
+};
+
+/** @deprecated Use stopMouseTracking */
+FocusFlow.stopDemoMode = function() {
+    this.stopMouseTracking();
 };
 
 /**
@@ -677,6 +818,13 @@ FocusFlow.stopDemoMode = function() {
  */
 FocusFlow.onGazeData = function(data, elapsedTime) {
     const now = performance.now();
+
+    // Cap processing frequency to avoid UI stalls on high-frequency gaze events.
+    if ((now - this._lastPipelineRunTs) < this._pipelineIntervalMs) {
+        return;
+    }
+    this._lastPipelineRunTs = now;
+    if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
     
     // ============================================
     // MEMBER A: Perception Layer
@@ -751,9 +899,9 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     }
     
     // ============================================
-    // MEMBER C: Keyword Extraction (on dwell)
+    // MEMBER C: Dwell-triggered comprehension assist
     // ============================================
-    this._checkKeywordTrigger(blockIndex, gazeBlock);
+    this._checkComprehensionAssist(blockIndex, gazeBlock, currentState);
     
     // ============================================
     // MEMBER C: Analytics Recording
@@ -776,7 +924,10 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     // ============================================
     // Update Dashboard UI
     // ============================================
-    this.updateDashboard(currentState, strategy, gazeBlock);
+    if ((now - this._lastDashboardUpdateTs) >= this._dashboardUpdateIntervalMs) {
+        this.updateDashboard(currentState, strategy, gazeBlock);
+        this._lastDashboardUpdateTs = now;
+    }
     
     // ============================================
     // Track gaze history for smoothing
@@ -804,30 +955,10 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
     
     // ----- Row Highlighting -----
     if (gazeBlock && (state.name === 'Reading' || state.name === 'Normal')) {
-        this.readingView.refreshBlockRects();
         this.visualEffects.highlightElement(
             gazeBlock.element,
             state.name
         );
-        
-        // Auto-scroll ONLY when:
-        // 1. Gaze has been on this new block for at least _scrollDwellThreshold ms
-        // 2. Block is significantly out of viewport center (>200px)
-        if (gazeBlock.index !== this._lastBlockIndex) {
-            this._blockDwellForScroll = now;
-        }
-        
-        const scrollDwellElapsed = now - this._blockDwellForScroll;
-        if (scrollDwellElapsed > this._scrollDwellThreshold) {
-            const viewportCenter = window.innerHeight / 2;
-            const blockCenter = gazeBlock.rect.top + gazeBlock.rect.height / 2;
-            const distFromCenter = Math.abs(blockCenter - viewportCenter);
-            const blockVisible = (gazeBlock.rect.top > 0 && gazeBlock.rect.bottom < window.innerHeight);
-            
-            if (distFromCenter > 200 && !blockVisible) {
-                this.readingView.scrollToBlock(gazeBlock.index);
-            }
-        }
     } else {
         this.visualEffects.clearHighlight();
     }
@@ -846,8 +977,8 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
             this._distractionAlertShown = true;
             this.visualEffects.showPrompt(
                 '👀',
-                'Still there?',
-                'It looks like you stepped away. Come back when you\'re ready.'
+                this._t('prompt.stillThere.title'),
+                this._t('prompt.stillThere.sub')
             );
             this.visualEffects.playSound('feedback');
         }
@@ -857,10 +988,10 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
             if (elapsedSinceLastPrompt > 10000) {
                 this._lastDistractionPromptTime = now;
                 const reminders = [
-                    { icon: '💭', text: 'Come back when you\'re ready.', sub: 'Your reading is waiting.' },
-                    { icon: '🎯', text: 'One sentence at a time.', sub: 'No need to catch up all at once.' },
-                    { icon: '🌿', text: 'It\'s okay to take breaks.', sub: 'Just come back when you can.' },
-                    { icon: '📖', text: 'You were making great progress.', sub: 'Pick up where you left off.' }
+                    { icon: '💭', text: this._t('prompt.reminder1.text'), sub: this._t('prompt.reminder1.sub') },
+                    { icon: '🎯', text: this._t('prompt.reminder2.text'), sub: this._t('prompt.reminder2.sub') },
+                    { icon: '🌿', text: this._t('prompt.reminder3.text'), sub: this._t('prompt.reminder3.sub') },
+                    { icon: '📖', text: this._t('prompt.reminder4.text'), sub: this._t('prompt.reminder4.sub') }
                 ];
                 const pick = reminders[Math.floor(Math.random() * reminders.length)];
                 this.visualEffects.showPrompt(pick.icon, pick.text, pick.sub);
@@ -884,8 +1015,8 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
                     this.visualEffects.playSound('wakeup');
                     this.visualEffects.showPrompt(
                         '👀',
-                        'Time to refocus!',
-                        'You\'ve been away for a while. Pick up where you left off.'
+                        this._t('prompt.wakeup.title'),
+                        this._t('prompt.wakeup.sub')
                     );
                 }
             }, 15000);
@@ -911,8 +1042,8 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
         if (duration > 3000 && duration < 4000) {
             this.visualEffects.showPrompt(
                 '🧠',
-                'Take your time with this section.',
-                'No rush — understanding matters more than speed.'
+                this._t('prompt.struggling.title'),
+                this._t('prompt.struggling.sub')
             );
             this._lastStrugglePrompt = true;
         }
@@ -929,43 +1060,222 @@ FocusFlow._applyAdaptiveUI = function(state, strategy, gazeBlock, features) {
 
 
 /**
- * Check if we should trigger keyword extraction
+ * Show a comprehension summary when the user dwells on a paragraph long enough.
+ * Uses its own dwell tracker (independent from _lastBlockIndex) and never auto-hides.
  */
-FocusFlow._checkKeywordTrigger = function(blockIndex, gazeBlock) {
+FocusFlow._checkComprehensionAssist = function(blockIndex, gazeBlock, state) {
     const now = performance.now();
-    
-    if (blockIndex >= 0 && gazeBlock) {
-        if (blockIndex !== this._lastBlockIndex) {
-            this._blockDwellStart = now;
-        }
-        
-        const dwellTime = now - this._blockDwellStart;
-        
-        if (dwellTime > this.config.dwellForKeywords && 
-            !this._keywordsShownForBlock.has(blockIndex)) {
-            
-            this._keywordsShownForBlock.add(blockIndex);
-            
-            const allTexts = this.readingView.blockElements.map(el => el.textContent || '');
-            const currentText = gazeBlock.element.textContent || '';
-            
-            const result = this.keywordExtractor.extractAll(
-                currentText,
-                blockIndex,
-                allTexts
-            );
-            
-            if (result.keywords.length > 0) {
-                const displayKeywords = result.keywords.map(kw => ({
-                    word: kw.word.replace(/-/g, ' '),
-                    score: kw.score
-                }));
-                
-                this.visualEffects.showKeywords(displayKeywords);
-                this.visualEffects.playSound('keyword');
-            }
+    const focusedStates = ['Normal', 'Struggling'];
+    const confirmMs = this.config.summaryBlockConfirmMs || 1500;
+
+    if (blockIndex < 0 || !gazeBlock || !focusedStates.includes(state.name)) {
+        return;
+    }
+
+    if (blockIndex !== this._assistCandidateBlock) {
+        this._assistCandidateBlock = blockIndex;
+        this._assistCandidateSince = now;
+        this._assistDwellBlock = -1;
+        this._assistDwellStart = 0;
+        return;
+    }
+
+    if ((now - this._assistCandidateSince) < confirmMs) {
+        return;
+    }
+
+    if (this._assistDwellBlock !== blockIndex) {
+        this._assistDwellBlock = blockIndex;
+        this._assistDwellStart = now;
+    }
+
+    // Start LLM prefetch as soon as block is stable (while user is still reading)
+    if (!this._assistPrefetchStartedFor.has(blockIndex) && this.llmSummaryManager) {
+        this._assistPrefetchStartedFor.add(blockIndex);
+        this.llmSummaryManager.onReadingBlock(blockIndex, this._allBlockTexts);
+    }
+
+    const dwellTime = now - this._assistDwellStart;
+    if (dwellTime < this.config.dwellForSummary) return;
+    if (this._autoTriggeredForBlock.has(blockIndex)) return;
+    if (this._summaryGenerationInProgress.has(blockIndex)) return;
+
+    this.requestComprehensionForBlock(blockIndex, { auto: true, dwellTime });
+};
+
+FocusFlow.requestComprehensionForBlock = function(blockIndex, options = {}) {
+    const { manual = false, auto = false, dwellTime = 0 } = options;
+    if (blockIndex < 0) return;
+
+    const cached = this._blockSummaryCache[blockIndex];
+
+    if (manual && cached) {
+        this.reopenComprehensionForBlock(blockIndex);
+        return;
+    }
+
+    if (auto) {
+        if (this._autoTriggeredForBlock.has(blockIndex)) return;
+        this._autoTriggeredForBlock.add(blockIndex);
+        if (cached) {
+            this._displayComprehensionCard(blockIndex, cached, dwellTime);
+            return;
         }
     }
+
+    if (this._summaryGenerationInProgress.has(blockIndex)) {
+        this._displayComprehensionLoading(blockIndex, dwellTime);
+        return;
+    }
+
+    this._summaryGenerationInProgress.add(blockIndex);
+    const blockEl = this.readingView && typeof this.readingView.getBlockElement === 'function'
+        ? this.readingView.getBlockElement(blockIndex)
+        : null;
+    const gazeBlock = blockEl ? { element: blockEl } : null;
+    this._generateComprehensionForBlock(blockIndex, gazeBlock, dwellTime);
+};
+
+FocusFlow.reopenComprehensionForBlock = function(blockIndex) {
+    const cached = this._blockSummaryCache[blockIndex];
+    if (!cached) return;
+    this._displayComprehensionCard(blockIndex, cached, (cached.dwellSeconds || 0) * 1000);
+};
+
+FocusFlow.closeComprehensionCard = function() {
+    const blockIndex = this._comprehensionCardBlock;
+    if (this.visualEffects) {
+        this.visualEffects.hideComprehensionCard();
+    }
+    if (blockIndex >= 0 && this._blockSummaryCache[blockIndex] && this.readingView) {
+        this.readingView.updateComprehensionButton(blockIndex, 'reopen');
+    }
+    this._comprehensionCardBlock = -1;
+};
+
+FocusFlow._displayComprehensionLoading = function(blockIndex, dwellTime) {
+    const anchor = this.readingView && typeof this.readingView.getBlockElement === 'function'
+        ? this.readingView.getBlockElement(blockIndex)
+        : null;
+    this._comprehensionCardBlock = blockIndex;
+    if (this.readingView) {
+        this.readingView.updateComprehensionButton(blockIndex, 'hidden');
+    }
+    if (this.visualEffects) {
+        this.visualEffects.setComprehensionAnchor(anchor);
+        this.visualEffects.showComprehensionLoading({
+            blockIndex,
+            paragraphNumber: blockIndex + 1,
+            dwellSeconds: Math.round(dwellTime / 1000)
+        });
+    }
+};
+
+FocusFlow._displayComprehensionCard = function(blockIndex, cached, dwellTime, options = {}) {
+    const anchor = this.readingView && typeof this.readingView.getBlockElement === 'function'
+        ? this.readingView.getBlockElement(blockIndex)
+        : null;
+    this._comprehensionCardBlock = blockIndex;
+    if (this.readingView) {
+        this.readingView.updateComprehensionButton(blockIndex, 'hidden');
+    }
+    if (this.visualEffects) {
+        this.visualEffects.setComprehensionAnchor(anchor);
+        this.visualEffects.showComprehensionCard({
+            blockIndex,
+            paragraphNumber: blockIndex + 1,
+            summary: cached.text,
+            dwellSeconds: cached.dwellSeconds || Math.round(dwellTime / 1000),
+            method: cached.method || 'unknown'
+        });
+    }
+    if (options.recordAnalytics && this.analytics) {
+        this.analytics.recordComprehensionAssist(blockIndex);
+    }
+};
+
+FocusFlow._removeLegacyKeywordPanels = function() {
+    document.querySelectorAll('[data-ff-legacy-keyword]').forEach((el) => el.remove());
+    document.querySelectorAll('div').forEach((el) => {
+        if (el.id === 'ff-comprehension-card') return;
+        const style = el.style || {};
+        const html = el.innerHTML || '';
+        const isLegacyKeyword = style.position === 'fixed' && (
+            html.includes('🔑') ||
+            html.includes('KEY TERMS') ||
+            html.includes('关键术语') ||
+            html.includes('keyTerms')
+        );
+        if (isLegacyKeyword) el.remove();
+    });
+};
+
+FocusFlow._generateComprehensionForBlock = function(blockIndex, gazeBlock, dwellTime) {
+    const text = (this._allBlockTexts && this._allBlockTexts[blockIndex])
+        ? this._allBlockTexts[blockIndex]
+        : (gazeBlock && gazeBlock.element ? gazeBlock.element.textContent : '');
+
+    const docLang = this.readingView && typeof this.readingView.getDocumentLang === 'function'
+        ? this.readingView.getDocumentLang()
+        : (typeof ParagraphSummarizer !== 'undefined' ? ParagraphSummarizer.detectLanguage(text) : 'en');
+
+    this._displayComprehensionLoading(blockIndex, dwellTime);
+
+    const finish = (summaryText, method) => {
+        if (!summaryText) {
+            this._summaryGenerationInProgress.delete(blockIndex);
+            if (this.visualEffects) this.visualEffects.hideComprehensionCard();
+            this._comprehensionCardBlock = -1;
+            if (this.readingView) {
+                const hasCache = !!this._blockSummaryCache[blockIndex];
+                this.readingView.updateComprehensionButton(blockIndex, hasCache ? 'reopen' : 'generate');
+            }
+            return;
+        }
+        const payload = {
+            text: summaryText,
+            method: method || 'unknown',
+            dwellSeconds: Math.round(dwellTime / 1000)
+        };
+        this._blockSummaryCache[blockIndex] = payload;
+        this._displayComprehensionCard(blockIndex, payload, dwellTime, { recordAnalytics: true });
+        this._summaryGenerationInProgress.delete(blockIndex);
+    };
+
+    const manager = this.llmSummaryManager;
+    if (manager) {
+        manager.getSummary(blockIndex, text, { lang: docLang })
+            .then((result) => finish(result.text, result.method))
+            .catch(() => {
+                if (typeof ParagraphSummarizer !== 'undefined') {
+                    const local = ParagraphSummarizer.summarize(text, { lang: docLang });
+                    finish(local.text, local.method);
+                } else {
+                    this._summaryGenerationInProgress.delete(blockIndex);
+                }
+            });
+        return;
+    }
+
+    window.setTimeout(() => {
+        try {
+            let summary = this._paragraphSummaries && this._paragraphSummaries[blockIndex];
+            if (!summary && typeof ParagraphSummarizer !== 'undefined') {
+                summary = ParagraphSummarizer.summarize(text, { lang: docLang });
+            }
+            finish(summary && summary.text, summary && summary.method);
+        } catch (_) {
+            this._summaryGenerationInProgress.delete(blockIndex);
+        }
+    }, 0);
+};
+
+/**
+ * Open the end-of-session analytics report (heatmap + stats).
+ */
+FocusFlow.showSessionReport = function() {
+    if (typeof SessionReport === 'undefined' || !this.analytics) return;
+    SessionReport.show(this.analytics, this.readingView);
 };
 
 /**
@@ -982,7 +1292,15 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
         iconEl.textContent = icons[state.name] || '🧠';
     }
     if (nameEl) {
-        nameEl.textContent = state.name;
+        nameEl.textContent = (typeof I18n !== 'undefined')
+            ? I18n.translateState(state.name)
+            : state.name;
+    }
+    const descEl = document.getElementById('ff-state-desc');
+    if (descEl) {
+        descEl.textContent = (typeof I18n !== 'undefined')
+            ? I18n.translateStateDesc(state.name)
+            : 'Focused reading';
     }
     if (durEl) {
         durEl.textContent = (state.duration / 1000).toFixed(1);
@@ -994,10 +1312,14 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     const strategyNameEl = document.getElementById('ff-strategy-name');
     const strategyDescEl = document.getElementById('ff-strategy-desc');
     if (strategyNameEl) {
-        strategyNameEl.textContent = strategy.name || 'No intervention';
+        strategyNameEl.textContent = (strategy && strategy.name)
+            ? strategy.name
+            : this._t('strategy.none');
     }
     if (strategyDescEl) {
-        strategyDescEl.textContent = strategy.description || '';
+        strategyDescEl.textContent = (strategy && strategy.description)
+            ? strategy.description
+            : this._t('strategy.waiting');
     }
     
     const summary = this.analytics.getSessionSummary();
@@ -1006,16 +1328,18 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     if (attnEl) attnEl.textContent = summary.attentionScore + '%';
     
     const wpmEl = document.getElementById('ff-metric-wpm');
-    if (wpmEl && summary.readingSpeed > 0) wpmEl.textContent = summary.readingSpeed + ' wpm';
+    if (wpmEl && summary.readingSpeed > 0) {
+        wpmEl.textContent = summary.readingSpeed + ' ' + this._t('metrics.wpm');
+    }
     
     const focusEl = document.getElementById('ff-metric-focus');
     if (focusEl) focusEl.textContent = summary.focusRatio + '%';
     
     const regEl = document.getElementById('ff-metric-regression');
-    if (regEl) regEl.textContent = summary.regressionRate + '/min';
+    if (regEl) regEl.textContent = summary.regressionRate + this._t('metrics.perMin');
     
     const durMetricEl = document.getElementById('ff-metric-duration');
-    if (durMetricEl) durMetricEl.textContent = summary.sessionDuration + ' min';
+    if (durMetricEl) durMetricEl.textContent = summary.sessionDuration + ' ' + this._t('metrics.min');
     
     const distEl = document.getElementById('ff-metric-distractions');
     if (distEl) distEl.textContent = summary.distractionCount;
@@ -1029,7 +1353,7 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     
     const wpmBadge = document.getElementById('ff-wpm');
     if (wpmBadge && summary.readingSpeed > 0) {
-        wpmBadge.textContent = summary.readingSpeed + ' wpm';
+        wpmBadge.textContent = summary.readingSpeed + ' ' + this._t('metrics.wpm');
     }
     
     const scoreBadge = document.getElementById('ff-attention-score');
@@ -1081,6 +1405,18 @@ FocusFlow.shutdown = function() {
 };
 
 // Auto-initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    FocusFlow.init();
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await FocusFlow.init();
+    } catch (err) {
+        console.error('[FocusFlow] Fatal startup error:', err);
+        // Keep the app usable: at minimum show default reading content.
+        if (!FocusFlow.readingView) {
+            try {
+                FocusFlow.readingView = new ReadingView(FocusFlow.config || {});
+            } catch (fallbackErr) {
+                console.error('[FocusFlow] ReadingView fallback failed:', fallbackErr);
+            }
+        }
+    }
 });

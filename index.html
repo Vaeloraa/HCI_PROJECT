@@ -50,28 +50,33 @@
             <h1>FocusFlow</h1>
         </div>
         <div class="ff-header-controls">
-            <!-- Focus Mode Toggle -->
-            <div class="ff-focus-toggle" id="ff-focus-toggle-container"></div>
-            
-            <!-- Gaze Dot Toggle -->
-            <button id="btn-gaze-dot" class="ff-btn ff-btn-icon" title="Show/hide gaze tracking dot" onclick="toggleGazeDot()">
-                👁️
-            </button>
+            <div class="ff-mode-bar">
+                <div id="ff-focus-toggle-container"></div>
+                <div class="ff-segment-group" id="ff-tracking-toggle" role="group" aria-label="Tracking mode">
+                    <button type="button" class="ff-segment-btn active" data-tracking="mouse" data-i18n-title="tracking.mouseTitle" title="Mouse tracking"><span class="ff-segment-icon">🖱️</span><span data-i18n="tracking.mouse">Mouse</span></button>
+                    <button type="button" class="ff-segment-btn" data-tracking="gaze" data-i18n-title="tracking.gazeTitle" title="Eye tracking"><span class="ff-segment-icon">👁️</span><span data-i18n="tracking.gaze">Eye</span></button>
+                </div>
+                <div class="ff-segment-group ff-lang-toggle" id="ff-lang-toggle" role="group" aria-label="Language">
+                    <button type="button" class="ff-segment-btn ff-lang-toggle-btn" data-lang="zh">中文</button>
+                    <button type="button" class="ff-segment-btn ff-lang-toggle-btn active" data-lang="en">EN</button>
+                </div>
+            </div>
+            <button type="button" id="btn-gaze-dot" class="ff-icon-btn ff-gaze-dot-toggle active" data-i18n-title="gaze.toggle" title="Show or hide gaze position indicator" onclick="toggleGazeDot()" aria-label="Toggle gaze dot">👁️</button>
             
             <!-- Reading Timer -->
             <div class="ff-timer-widget" id="ff-timer-widget" title="Reading timer">
-                <span class="ff-timer-display" id="ff-timer-display">00:00</span>
+                <span class="ff-timer-display" id="ff-timer-display" onclick="onTimerDisplayClick()">00:00</span>
                 <button class="ff-timer-btn" id="ff-timer-start" onclick="toggleTimer()" title="Start / pause">▶</button>
-                <button class="ff-timer-btn" id="ff-timer-mode" onclick="toggleTimerMode()" oncontextmenu="setTimerCountUp(); return false;" title="Click: countdown / switch duration · Right-click: count up">⏱️</button>
+                <button class="ff-timer-btn" id="ff-timer-mode" onclick="toggleTimerMode()" title="Toggle count-up / countdown">⏱</button>
                 <button class="ff-timer-btn" id="ff-timer-reset" onclick="resetTimer()" title="Reset">↺</button>
             </div>
 
             <!-- File Import Button -->
             <input type="file" id="ff-file-input" accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.csv,.json,.xml,.html,.cpp,.c,.h,.py,.js,.ts,.css,.java,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg" style="display:none" multiple onchange="handleFileImport(event)">
-            <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()">
+            <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">
                 📂 Import File
             </button>
-            <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()">
+            <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()" data-i18n="btn.reset">
                 🔄 Reset
             </button>
         </div>
@@ -83,8 +88,9 @@
         <!-- READING PANEL (Member B) - Left side, takes remaining space -->
         <section class="ff-reading-panel" id="ff-reading-panel">
             <div class="ff-reading-header">
-                <h2>📖 Reading Area</h2>
+                <h2 data-i18n="reading.area">📖 Reading Area</h2>
                 <div class="ff-reading-stats">
+                    <button id="btn-paragraph-debug" class="ff-btn ff-btn-secondary ff-btn-xs" onclick="toggleParagraphDebug()" data-i18n="btn.paragraphDebug" data-i18n-title="debug.paragraph.toggleTitle" title="Show paragraph split boundaries">¶ Debug</button>
                     <span class="ff-reading-stat" id="ff-wpm">-- wpm</span>
                     <span class="ff-reading-stat" id="ff-attention-score">--%</span>
                     <span class="ff-reading-stat" id="ff-insight"></span>
@@ -93,46 +99,31 @@
             
             <!-- The reading content rendered by ReadingView -->
             <div class="ff-reading-content" id="ff-reading-content">
-                <div class="ff-reading-loading">Loading reading content...</div>
+                <div class="ff-reading-loading" data-i18n="reading.loading">Loading reading content...</div>
             </div>
             
             <!-- Progress bar -->
             <div class="ff-reading-progress-bar">
                 <div class="ff-reading-progress-fill" id="ff-reading-progress-fill" style="width: 0%"></div>
             </div>
-            
-            <!-- Keyword popup container (Member C) -->
-            <div class="ff-keyword-popup" id="ff-keyword-popup" style="display:none;">
-                <div class="ff-keyword-header">
-                    <h3>💡 Paragraph Keywords</h3>
-                    <button class="ff-keyword-close" id="ff-keyword-close">&times;</button>
-                </div>
-                <div class="ff-keyword-body" id="ff-keyword-body"></div>
-            </div>
         </section>
         
         <!-- DASHBOARD SIDEBAR (right side - compact essentials only) -->
         <aside class="ff-dashboard-panel" id="ff-dashboard-panel">
             
-            <!-- 📷 Camera Card (collapsible, at top) -->
+            <!-- 📷 Eye tracking preview (controls are in the header mode bar) -->
             <div class="ff-card ff-card-camera-sidebar" id="card-camera-sidebar">
                 <div class="ff-card-header ff-card-header-collapsible" onclick="toggleSidebarCamera()">
-                    <h2>📷 Face Detection</h2>
-                    <div class="ff-camera-controls">
-                        <button id="btn-start-camera" class="ff-btn ff-btn-primary ff-btn-xs" onclick="event.stopPropagation(); toggleCamera()">📷 Start</button>
-                        <span class="ff-badge" id="ff-camera-status" style="background:#666">Not connected</span>
-                        <span class="ff-collapse-icon" id="camera-collapse-icon">▼</span>
-                    </div>
+                    <h2 data-i18n="camera.title">Eye Tracking</h2>
+                    <span class="ff-collapse-icon" id="camera-collapse-icon">▼</span>
                 </div>
                 <div class="ff-card-body ff-camera-body" id="camera-sidebar-body">
-                    <div class="ff-camera-container">
-                        <video id="webcam" autoplay playsinline muted></video>
-                        <canvas id="face-overlay"></canvas>
-                        <div class="ff-camera-info" id="ff-camera-info">
-                            <div class="ff-camera-stat"><span>👤</span> <span id="ff-cam-face">---</span></div>
-                            <div class="ff-camera-stat"><span>🎯</span> <span id="ff-cam-confidence">---</span></div>
-                            <div class="ff-camera-stat"><span>📐</span> <span id="ff-cam-pose">---</span></div>
-                            <div class="ff-camera-stat"><span>👁️</span> <span id="ff-cam-gaze">---</span></div>
+                    <div class="ff-camera-preview" id="ff-webgazer-preview">
+                        <div class="ff-camera-reticle" aria-hidden="true"></div>
+                        <div class="ff-face-guide" aria-hidden="true"></div>
+                        <div class="ff-camera-empty">
+                            <strong data-i18n="camera.emptyTitle">Camera preview</strong>
+                            <span data-i18n="camera.emptySub">Switch to Eye mode in the header to show the WebGazer face mesh here.</span>
                         </div>
                     </div>
                 </div>
@@ -141,7 +132,7 @@
             <!-- Quick State Card - compact horizontal layout -->
             <div class="ff-card ff-card-state" id="card-state">
                 <div class="ff-card-header">
-                    <h2>🧠 State</h2>
+                    <h2 data-i18n="state.title">🧠 State</h2>
                     <span class="ff-badge" id="ff-state-confidence">95%</span>
                 </div>
                 <div class="ff-card-body">
@@ -158,8 +149,8 @@
                     <!-- Strategy inline -->
                     <div class="ff-strategy-compact">
                         <span class="ff-strategy-label">🎯</span>
-                        <span class="ff-strategy-name" id="ff-strategy-name">No intervention</span>
-                        <span class="ff-strategy-desc" id="ff-strategy-desc">Waiting for state changes...</span>
+                        <span class="ff-strategy-name" id="ff-strategy-name" data-i18n="state.noIntervention">No intervention</span>
+                        <span class="ff-strategy-desc" id="ff-strategy-desc" data-i18n="state.waitingChanges">Waiting for state changes...</span>
                         <span class="ff-badge" id="ff-escalation-badge">low</span>
                     </div>
                 </div>
@@ -168,31 +159,31 @@
             <!-- Attention Metrics (Member C) - compact grid -->
             <div class="ff-card ff-card-metrics">
                 <div class="ff-card-header">
-                    <h2>📊 Attention Metrics</h2>
+                    <h2 data-i18n="metrics.title">📊 Attention Metrics</h2>
                 </div>
                 <div class="ff-card-body ff-metrics-grid" id="ff-metrics-grid">
                     <div class="ff-metric-item">
-                        <span class="ff-metric-label">🎯 Attention</span>
+                        <span class="ff-metric-label" data-i18n="metrics.attention">🎯 Attention</span>
                         <span class="ff-metric-value" id="ff-metric-attention">0%</span>
                     </div>
                     <div class="ff-metric-item">
-                        <span class="ff-metric-label">📖 Speed</span>
+                        <span class="ff-metric-label" data-i18n="metrics.speed">📖 Speed</span>
                         <span class="ff-metric-value" id="ff-metric-wpm">0</span>
                     </div>
                     <div class="ff-metric-item">
-                        <span class="ff-metric-label">📊 Focus Ratio</span>
+                        <span class="ff-metric-label" data-i18n="metrics.focusRatio">📊 Focus Ratio</span>
                         <span class="ff-metric-value" id="ff-metric-focus">0%</span>
                     </div>
                     <div class="ff-metric-item">
-                        <span class="ff-metric-label">🔄 Regression</span>
+                        <span class="ff-metric-label" data-i18n="metrics.regression">🔄 Regression</span>
                         <span class="ff-metric-value" id="ff-metric-regression">0</span>
                     </div>
                     <div class="ff-metric-item">
-                        <span class="ff-metric-label">⏱️ Duration</span>
+                        <span class="ff-metric-label" data-i18n="metrics.duration">⏱️ Duration</span>
                         <span class="ff-metric-value" id="ff-metric-duration">0m</span>
                     </div>
                     <div class="ff-metric-item">
-                        <span class="ff-metric-label">🚫 Distractions</span>
+                        <span class="ff-metric-label" data-i18n="metrics.distractions">🚫 Distractions</span>
                         <span class="ff-metric-value" id="ff-metric-distractions">0</span>
                     </div>
                 </div>
@@ -201,27 +192,27 @@
             <!-- 🎯 Goal Setting Card -->
             <div class="ff-card ff-card-goal" id="card-goal">
                 <div class="ff-card-header">
-                    <h2>🎯 Reading Goal</h2>
-                    <button class="ff-btn-sm" id="btn-set-goal" onclick="openGoalDialog()">⚙️ Set</button>
+                    <h2 data-i18n="goal.title">🎯 Reading Goal</h2>
+                    <button class="ff-btn-sm" id="btn-set-goal" onclick="openGoalDialog()" data-i18n="btn.set">⚙️ Set</button>
                 </div>
                 <div class="ff-card-body" id="card-goal-body">
                     <div class="ff-goal-status">
                         <div class="ff-goal-row">
-                            <span class="ff-goal-label">📖 Target Words</span>
+                            <span class="ff-goal-label" data-i18n="goal.targetWords">📖 Target Words</span>
                             <span class="ff-goal-value" id="ff-goal-words">---</span>
                         </div>
                         <div class="ff-goal-row">
-                            <span class="ff-goal-label">⏱️ Time Limit</span>
+                            <span class="ff-goal-label" data-i18n="goal.timeLimit">⏱️ Time Limit</span>
                             <span class="ff-goal-value" id="ff-goal-time">---</span>
                         </div>
                         <div class="ff-goal-row">
-                            <span class="ff-goal-label">📊 Progress</span>
+                            <span class="ff-goal-label" data-i18n="goal.progress">📊 Progress</span>
                             <span class="ff-goal-value" id="ff-goal-progress">---</span>
                         </div>
                         <div class="ff-goal-progress-bar" style="margin-top:6px;">
                             <div class="ff-goal-progress-fill" id="ff-goal-bar" style="width:0%"></div>
                         </div>
-                        <div class="ff-goal-empty" id="ff-goal-empty">Click ⚙️ Set Reading Goal</div>
+                        <div class="ff-goal-empty" id="ff-goal-empty" data-i18n="goal.empty">Click Set to define a reading goal</div>
                     </div>
                 </div>
             </div>
@@ -229,7 +220,7 @@
             <!-- Multi-modal Features - compact 2-column -->
             <div class="ff-card ff-card-features">
                 <div class="ff-card-header">
-                    <h2>📡 Perception Features</h2>
+                    <h2 data-i18n="features.title">📡 Perception Features</h2>
                 </div>
                 <div class="ff-card-body ff-features-grid" id="ff-features-grid">
                     <div class="ff-feature-item">
@@ -267,18 +258,10 @@
                 </div>
             </div>
 
-        </aside>
-    </main>
-
-    <!-- ====== BOTTOM SECTION: Chart + Timeline + Log (full width, camera moved to sidebar) ====== -->
-    <div class="ff-dashboard">
-        
-        <!-- Cards row: Chart + Timeline + Log -->
-        <div class="ff-row ff-row-bottom">
             <!-- State Probability Chart -->
             <div class="ff-card ff-card-chart">
                 <div class="ff-card-header">
-                    <h2>📊 State Probability Distribution</h2>
+                    <h2 data-i18n="chart.stateProb">📊 State Probability Distribution</h2>
                 </div>
                 <div class="ff-card-body">
                     <canvas id="stateProbChart" height="120"></canvas>
@@ -288,11 +271,11 @@
             <!-- State Timeline -->
             <div class="ff-card ff-card-timeline">
                 <div class="ff-card-header">
-                    <h2>⏳ State Timeline</h2>
+                    <h2 data-i18n="chart.timeline">⏳ State Timeline</h2>
                 </div>
                 <div class="ff-card-body">
                     <div class="ff-timeline" id="ff-timeline">
-                        <div class="ff-timeline-empty">Waiting for data...</div>
+                        <div class="ff-timeline-empty" data-i18n="chart.waiting">Waiting for data...</div>
                     </div>
                 </div>
             </div>
@@ -300,20 +283,21 @@
             <!-- Event Log -->
             <div class="ff-card ff-card-log">
                 <div class="ff-card-header">
-                    <h2>📝 Event Log</h2>
-                    <button class="ff-btn-sm" onclick="clearLog()">Clear</button>
+                    <h2 data-i18n="log.title">📝 Event Log</h2>
+                    <button class="ff-btn-sm" onclick="clearLog()" data-i18n="btn.clear">Clear</button>
                 </div>
                 <div class="ff-card-body">
                     <div class="ff-log-container" id="ff-log">
                         <div class="ff-log-entry ff-log-info">
                             <span class="ff-log-time">--:--:--</span>
-                            <span class="ff-log-msg">System ready, waiting to start...</span>
+                            <span class="ff-log-msg" data-i18n="log.ready">System ready, waiting to start...</span>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
+
+        </aside>
+    </main>
 
 
     <!-- ====== SCRIPTS ====== -->
@@ -337,18 +321,27 @@
     <script src="js/decision/interventionStrategy.js"></script>
     <script src="js/decision/decisionModule.js"></script>
     
+    <!-- i18n -->
+    <script src="js/i18n/i18n.js"></script>
+    <script src="js/utils/cameraAccess.js"></script>
+
     <!-- 4. UI Layer (Member B) -->
+    <script src="js/utils/textEncoding.js"></script>
+    <script src="js/ui/paragraphSplitter.js"></script>
     <script src="js/ui/readingView.js"></script>
-    <script src="js/ui/visualEffects.js"></script>
+    <script src="js/ui/visualEffects.js?v=2.4.0"></script>
     <script src="js/ui/focusMode.js"></script>
     <script src="js/ui/debugPanel.js"></script>
     
     <!-- 5. NLP & Analytics (Member C) -->
     <script src="js/nlp/keywordExtractor.js"></script>
-    <script src="js/analytics/attentionAnalytics.js"></script>
+    <script src="js/nlp/llmSummaryManager.js?v=2.6.0"></script>
+    <script src="js/nlp/paragraphSummarizer.js?v=2.6.0"></script>
+    <script src="js/analytics/attentionAnalytics.js?v=2.4.0"></script>
+    <script src="js/analytics/sessionReport.js?v=2.4.0"></script>
     
     <!-- 6. Main Application Orchestrator -->
-    <script src="js/main.js"></script>
+    <script src="js/main.js?v=2.6.0"></script>
     
     <!-- 5. Test/Demo Page Logic -->
     <script>
@@ -369,8 +362,14 @@
 
         // ====== INIT ======
         document.addEventListener('DOMContentLoaded', function() {
+            if (typeof I18n !== 'undefined') I18n.init();
             initTheme();
             polishStaticUI();
+            syncTimerUI();
+            if (typeof I18n !== 'undefined') {
+                I18n.applyDocument();
+                I18n.bindLangToggle();
+            }
             renderRuntimeNotice();
             log('✅', 'Page loaded');
             log('ℹ️', 'Click "Start Demo Mode" to test');
@@ -394,76 +393,99 @@
                 log('⚠️', 'FaceDetector API unavailable; using simple detection mode');
             }
             
-            // Initialize focus mode toggle buttons
+            // Initialize focus mode + tracking toggles
             setTimeout(() => {
+                const container = document.getElementById('ff-focus-toggle-container');
+                if (container && typeof FocusMode !== 'undefined') {
+                    container.innerHTML = FocusMode.createToggleHTML();
+                }
                 if (FocusFlow.focusMode) {
                     FocusFlow.focusMode.bindToggleButtons();
                 }
-                const container = document.getElementById('ff-focus-toggle-container');
-                if (container && FocusFlow.focusMode) {
-                    container.innerHTML = FocusMode.createToggleHTML();
-                    FocusFlow.focusMode.bindToggleButtons();
-                }
+                if (typeof bindTrackingToggle === 'function') bindTrackingToggle();
             }, 2000);
         });
 
-        // ====== GAZE DOT TOGGLE ======
-        window.toggleGazeDot = function() {
-            const show = FocusFlow.config.showGazeDot;
-            FocusFlow.config.showGazeDot = !show;
-            localStorage.setItem('focusflow_gaze_dot', FocusFlow.config.showGazeDot);
-            const btn = document.getElementById('btn-gaze-dot');
-            if (btn) {
-                btn.textContent = FocusFlow.config.showGazeDot ? '👁️' : '👁️‍🗨️';
-                btn.style.opacity = FocusFlow.config.showGazeDot ? '1' : '0.5';
-            }
-            // Toggle the app's own gaze cursor element
+        // ====== GAZE DOT VISIBILITY (separate from mouse/eye tracking mode) ======
+        window.applyGazeDotVisibility = function() {
+            const isGaze = FocusFlow.config.trackingMode === 'gaze';
+            const show = FocusFlow.config.showGazeDot && isGaze;
+
             const cursor = document.getElementById('ff-gaze-cursor');
             if (cursor) {
-                const showCursor = FocusFlow.config.showGazeDot && FocusFlow.config.trackingMode !== 'mouse';
-                cursor.style.display = showCursor ? 'block' : 'none';
-                cursor.style.opacity = showCursor ? '1' : '0';
+                cursor.style.display = show ? 'block' : 'none';
+                cursor.style.opacity = show ? '1' : '0';
             }
-            if ((!FocusFlow.config.showGazeDot || FocusFlow.config.trackingMode === 'mouse') && FocusFlow.visualEffects) {
+            if ((!show || !isGaze) && FocusFlow.visualEffects) {
                 FocusFlow.visualEffects.hideGazeGlow();
             }
-            // Also toggle WebGazer's built-in red prediction dot.
-            // showPredictionPoints() only hides/shows the dot; gaze tracking
-            // keeps running in the background either way.
             try {
                 if (window.webgazer && typeof window.webgazer.showPredictionPoints === 'function') {
-                    window.webgazer.showPredictionPoints(FocusFlow.config.showGazeDot && FocusFlow.config.trackingMode !== 'mouse');
+                    window.webgazer.showPredictionPoints(show);
                 }
-            } catch (e) {
-                console.warn('[GazeDot] Unable to toggle WebGazer prediction points:', e);
-            }
+            } catch (e) {}
+        };
+
+        window.syncGazeDotButtonUI = function() {
+            const btn = document.getElementById('btn-gaze-dot');
+            if (!btn) return;
+            const on = !!FocusFlow.config.showGazeDot;
+            btn.textContent = on ? '👁️' : '👁️‍🗨️';
+            btn.classList.toggle('active', on);
+            btn.style.opacity = on ? '1' : '0.45';
+            btn.title = (typeof I18n !== 'undefined') ? I18n.t('gaze.toggle') : 'Show or hide gaze position indicator';
+        };
+
+        window.toggleGazeDot = function() {
+            FocusFlow.config.showGazeDot = !FocusFlow.config.showGazeDot;
+            localStorage.setItem('focusflow_gaze_dot', FocusFlow.config.showGazeDot);
+            syncGazeDotButtonUI();
+            applyGazeDotVisibility();
             log('👁️', 'Gaze dot: ' + (FocusFlow.config.showGazeDot ? 'Shown' : 'Hidden'));
         };
 
-        // Initialize gaze dot state from localStorage
+        // ====== TRACKING MODE TOGGLE (mouse / eye — not gaze dot) ======
+        window.syncTrackingToggleUI = function() {
+            const mode = (FocusFlow && FocusFlow.config) ? FocusFlow.config.trackingMode : 'mouse';
+            const isGaze = mode === 'gaze';
+            document.querySelectorAll('#ff-tracking-toggle [data-tracking]').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.tracking === (isGaze ? 'gaze' : 'mouse'));
+            });
+            applyGazeDotVisibility();
+        };
+
+        window.bindTrackingToggle = function() {
+            const group = document.getElementById('ff-tracking-toggle');
+            if (!group) return;
+            group.querySelectorAll('[data-tracking]').forEach((btn) => {
+                btn.onclick = async () => {
+                    const target = btn.dataset.tracking;
+                    const current = FocusFlow.config.trackingMode === 'gaze' ? 'gaze' : 'mouse';
+                    if (target === current) return;
+
+                    if (target === 'gaze') {
+                        await startCamera();
+                    } else {
+                        stopCamera();
+                    }
+                    syncTrackingToggleUI();
+                };
+            });
+            syncTrackingToggleUI();
+        };
+
         (function initGazeDot() {
             const saved = localStorage.getItem('focusflow_gaze_dot');
             if (saved !== null) {
                 FocusFlow.config.showGazeDot = (saved === 'true');
+            } else {
+                FocusFlow.config.showGazeDot = true;
             }
-            const btn = document.getElementById('btn-gaze-dot');
-            if (btn) {
-                btn.textContent = FocusFlow.config.showGazeDot ? '👁️' : '👁️‍🗨️';
-                btn.style.opacity = FocusFlow.config.showGazeDot ? '1' : '0.5';
-            }
-            const cursor = document.getElementById('ff-gaze-cursor');
-            if (cursor && !FocusFlow.config.showGazeDot) {
-                cursor.style.display = 'none';
-                cursor.style.opacity = '0';
-            }
-            if ((!FocusFlow.config.showGazeDot || FocusFlow.config.trackingMode === 'mouse') && FocusFlow.visualEffects) {
-                FocusFlow.visualEffects.hideGazeGlow();
-            }
-            // Apply the saved preference to WebGazer once it becomes available,
-            // so a "hidden" choice persists across reloads without stopping tracking.
+            syncGazeDotButtonUI();
+            applyGazeDotVisibility();
             const applyToWebGazer = (attempt = 0) => {
                 if (window.webgazer && typeof window.webgazer.showPredictionPoints === 'function') {
-                    try { window.webgazer.showPredictionPoints(FocusFlow.config.showGazeDot && FocusFlow.config.trackingMode !== 'mouse'); } catch (e) {}
+                    applyGazeDotVisibility();
                 } else if (attempt < 20) {
                     setTimeout(() => applyToWebGazer(attempt + 1), 500);
                 }
@@ -494,9 +516,48 @@
             if (!display) return;
             const value = ffTimer.mode === 'up' ? ffTimer.elapsed : ffTimer.remaining;
             display.textContent = formatTimer(value);
-            // Warn when countdown is low
             display.classList.toggle('ff-timer-low',
                 ffTimer.mode === 'down' && ffTimer.remaining <= 60 * 1000 && ffTimer.remaining > 0);
+            display.classList.toggle('ff-timer-display--countdown', ffTimer.mode === 'down');
+        }
+
+        function syncTimerUI() {
+            renderTimer();
+            const startBtn = document.getElementById('ff-timer-start');
+            if (startBtn) startBtn.textContent = ffTimer.running ? '⏸' : '▶';
+
+            const modeBtn = document.getElementById('ff-timer-mode');
+            const t = (key, params) => (typeof I18n !== 'undefined' ? I18n.t(key, params) : key);
+            if (modeBtn) {
+                if (ffTimer.mode === 'up') {
+                    modeBtn.textContent = '⏱';
+                    modeBtn.title = t('timer.modeUpTitle');
+                } else {
+                    modeBtn.textContent = '⏳';
+                    const min = Math.round(ffTimer.countdownTotal / 60000);
+                    modeBtn.title = t('timer.modeDownTitle', { min });
+                }
+            }
+
+            const display = document.getElementById('ff-timer-display');
+            if (display) {
+                if (ffTimer.mode === 'down') {
+                    const min = Math.round(ffTimer.countdownTotal / 60000);
+                    display.title = t('timer.presetHint', { min });
+                } else {
+                    display.title = t('timer.countUpHint');
+                }
+            }
+
+            const widget = document.getElementById('ff-timer-widget');
+            if (widget) {
+                widget.dataset.timerMode = ffTimer.mode;
+                if (ffTimer.mode === 'down') {
+                    widget.dataset.timerPreset = String(Math.round(ffTimer.countdownTotal / 60000));
+                } else {
+                    delete widget.dataset.timerPreset;
+                }
+            }
         }
 
         function timerTick() {
@@ -514,7 +575,8 @@
                     renderTimer();
                     log('⏰', 'Countdown finished!');
                     if (FocusFlow.visualEffects && FocusFlow.visualEffects.showPrompt) {
-                        FocusFlow.visualEffects.showPrompt('⏰', 'Time is up!', 'This reading session has ended. Take a short break.');
+                        const t = (key, params) => (typeof I18n !== 'undefined' ? I18n.t(key, params) : key);
+                        FocusFlow.visualEffects.showPrompt('⏰', t('timer.timeUp.title'), t('timer.timeUp.sub'));
                     }
                     // Auto-generate session summary if a goal is active
                     if (typeof showSessionSummary === 'function' && sessionGoal.active) {
@@ -538,73 +600,68 @@
                 clearInterval(ffTimer.intervalId);
                 ffTimer.intervalId = null;
             }
-            const btn = document.getElementById('ff-timer-start');
-            if (btn) btn.textContent = '▶';
+            syncTimerUI();
         }
 
         window.toggleTimer = function() {
-            const btn = document.getElementById('ff-timer-start');
             if (ffTimer.running) {
                 pauseTimer();
                 log('⏸️', 'Timer paused');
             } else {
-                // For countdown, if it hit zero, restart from total
                 if (ffTimer.mode === 'down' && ffTimer.remaining <= 0) {
                     ffTimer.remaining = ffTimer.countdownTotal;
                 }
                 ffTimer.running = true;
-                if (btn) btn.textContent = '⏸';
                 startTimerInterval();
                 log('▶️', `Timer started (${ffTimer.mode === 'up' ? 'count-up' : 'countdown'})`);
+                syncTimerUI();
             }
         };
 
-        // Preset countdown durations (minutes) cycled by clicking the duration button
+        // Preset countdown durations (minutes)
         const ffCountdownPresets = [5, 15, 25, 45, 60];
+
+        window.cycleCountdownPreset = function() {
+            if (ffTimer.mode !== 'down') return;
+            pauseTimer();
+            const currentMin = Math.round(ffTimer.countdownTotal / 60000);
+            const idx = ffCountdownPresets.indexOf(currentMin);
+            const nextMin = ffCountdownPresets[(idx + 1) % ffCountdownPresets.length];
+            ffTimer.countdownTotal = nextMin * 60 * 1000;
+            ffTimer.remaining = ffTimer.countdownTotal;
+            log('⏳', `Countdown duration: ${nextMin} min`);
+            syncTimerUI();
+        };
+
+        window.onTimerDisplayClick = function() {
+            if (ffTimer.mode === 'down') {
+                cycleCountdownPreset();
+            }
+        };
 
         window.toggleTimerMode = function() {
             pauseTimer();
             if (ffTimer.mode === 'up') {
-                // Switch to countdown using the first preset (25 min default kept if set)
                 ffTimer.mode = 'down';
-                if (!ffTimer.countdownTotal) ffTimer.countdownTotal = 25 * 60 * 1000;
                 ffTimer.remaining = ffTimer.countdownTotal;
-                log('⏳', `Switched to countdown mode (${Math.round(ffTimer.countdownTotal / 60000)} min). Click ⏳ again to change duration`);
+                log('⏳', `Switched to countdown (${Math.round(ffTimer.countdownTotal / 60000)} min)`);
             } else {
-                // Already in countdown: cycle through preset durations
-                const currentMin = Math.round(ffTimer.countdownTotal / 60000);
-                const idx = ffCountdownPresets.indexOf(currentMin);
-                const nextMin = ffCountdownPresets[(idx + 1) % ffCountdownPresets.length];
-                ffTimer.countdownTotal = nextMin * 60 * 1000;
-                ffTimer.remaining = ffTimer.countdownTotal;
-                log('⏳', `Countdown duration set to ${nextMin} min`);
+                ffTimer.mode = 'up';
+                log('⏱️', 'Switched to count-up mode');
             }
-            const modeBtn = document.getElementById('ff-timer-mode');
-            if (modeBtn) modeBtn.textContent = ffTimer.mode === 'up' ? '⏱️' : '⏳';
-            renderTimer();
+            syncTimerUI();
         };
-
-        // Switch back to count-up mode (long-press / right-click on mode button)
-        window.setTimerCountUp = function() {
-            pauseTimer();
-            ffTimer.mode = 'up';
-            const modeBtn = document.getElementById('ff-timer-mode');
-            if (modeBtn) modeBtn.textContent = '⏱️';
-            renderTimer();
-            log('⏱️', 'Switched to count-up mode');
-        };
-
 
         window.resetTimer = function() {
             pauseTimer();
             ffTimer.elapsed = 0;
             ffTimer.remaining = ffTimer.countdownTotal;
-            renderTimer();
+            syncTimerUI();
             log('↺', 'Timer reset');
         };
 
-        // Initial render
-        renderTimer();
+        // Initial sync (DOM may be replaced again by polishStaticUI)
+        syncTimerUI();
 
 
         // ====== SIDEBAR CAMERA TOGGLE ======
@@ -628,8 +685,9 @@
             (location.protocol === 'https:' || location.protocol === 'http:')) {
             window.addEventListener('load', () => {
                 // Use a relative path so it works regardless of the base directory
-                navigator.serviceWorker.register('sw.js').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=8').then(reg => {
                     console.log('[PWA] Service Worker registered:', reg.scope);
+                    reg.update();
                 }).catch(err => {
                     console.warn('[PWA] Service Worker registration failed:', err);
                 });
@@ -639,11 +697,32 @@
         }
 
 
+        window.showSessionReport = function() {
+            if (FocusFlow && typeof FocusFlow.showSessionReport === 'function') {
+                FocusFlow.showSessionReport();
+            }
+        };
+
         // ====== DEBUG PANEL TOGGLE ======
         window.toggleDebugPanel = function() {
             if (FocusFlow.debugPanel) {
                 FocusFlow.debugPanel.toggle();
                 document.getElementById('btn-debug').classList.toggle('active', FocusFlow.debugPanel.isVisible());
+            }
+        };
+
+        window.toggleParagraphDebug = function() {
+            if (!FocusFlow.readingView || typeof FocusFlow.readingView.toggleParagraphDebug !== 'function') {
+                return;
+            }
+            const enabled = FocusFlow.readingView.toggleParagraphDebug();
+            const btn = document.getElementById('btn-paragraph-debug');
+            if (btn) {
+                btn.classList.toggle('active', enabled);
+                const label = (typeof I18n !== 'undefined')
+                    ? I18n.t(enabled ? 'btn.paragraphDebugOn' : 'btn.paragraphDebug')
+                    : (enabled ? '¶ Debug ON' : '¶ Debug');
+                btn.textContent = label;
             }
         };
 
@@ -655,62 +734,72 @@
                         <span class="ff-logo-mark" aria-hidden="true"></span>
                         <div>
                             <h1>FocusFlow</h1>
-                            <p>Adaptive Attention Reading System</p>
+                            <p data-i18n="app.tagline">Adaptive Attention Reading System</p>
                         </div>
                     </div>
                     <div class="ff-header-controls">
-                        <div class="ff-focus-toggle" id="ff-focus-toggle-container"></div>
-                        <button id="btn-gaze-dot" class="ff-icon-btn" title="Show or hide the real gaze tracking dot" onclick="toggleGazeDot()" aria-label="Show or hide the real gaze tracking dot">●</button>
-                        <div class="ff-timer-widget" id="ff-timer-widget" title="Reading timer">
-                            <span class="ff-timer-display" id="ff-timer-display">00:00</span>
-                            <button class="ff-timer-btn" id="ff-timer-start" onclick="toggleTimer()" title="Start or pause">▶</button>
-                            <button class="ff-timer-btn" id="ff-timer-mode" onclick="toggleTimerMode()" oncontextmenu="setTimerCountUp(); return false;" title="Switch timer mode">⏱</button>
-                            <button class="ff-timer-btn" id="ff-timer-reset" onclick="resetTimer()" title="Reset">↺</button>
+                        <div class="ff-mode-bar">
+                            <div id="ff-focus-toggle-container"></div>
+                            <div class="ff-segment-group" id="ff-tracking-toggle" role="group" aria-label="Tracking mode">
+                                <button type="button" class="ff-segment-btn active" data-tracking="mouse" data-i18n-title="tracking.mouseTitle" title="Mouse tracking"><span class="ff-segment-icon">🖱️</span><span data-i18n="tracking.mouse">Mouse</span></button>
+                                <button type="button" class="ff-segment-btn" data-tracking="gaze" data-i18n-title="tracking.gazeTitle" title="Eye tracking"><span class="ff-segment-icon">👁️</span><span data-i18n="tracking.gaze">Eye</span></button>
+                            </div>
+                            <div class="ff-segment-group ff-lang-toggle" id="ff-lang-toggle" role="group" aria-label="Language">
+                                <button type="button" class="ff-segment-btn ff-lang-toggle-btn" data-lang="zh">中文</button>
+                                <button type="button" class="ff-segment-btn ff-lang-toggle-btn active" data-lang="en">EN</button>
+                            </div>
+                        </div>
+                        <button type="button" id="btn-gaze-dot" class="ff-icon-btn ff-gaze-dot-toggle active" data-i18n-title="gaze.toggle" title="Show or hide gaze position indicator" onclick="toggleGazeDot()" aria-label="Toggle gaze dot">👁️</button>
+                        <div class="ff-timer-widget" id="ff-timer-widget" data-i18n-title="timer.title" title="Reading timer">
+                            <span class="ff-timer-display" id="ff-timer-display" onclick="onTimerDisplayClick()">00:00</span>
+                            <button class="ff-timer-btn" id="ff-timer-start" onclick="toggleTimer()" data-i18n-title="timer.start" title="Start or pause">▶</button>
+                            <button class="ff-timer-btn" id="ff-timer-mode" onclick="toggleTimerMode()" data-i18n-title="timer.modeUpTitle" title="Toggle count-up / countdown">⏱</button>
+                            <button class="ff-timer-btn" id="ff-timer-reset" onclick="resetTimer()" data-i18n-title="timer.reset" title="Reset">↺</button>
                         </div>
                         <input type="file" id="ff-file-input" accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.csv,.json,.xml,.html,.cpp,.c,.h,.py,.js,.ts,.css,.java,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg" style="display:none" multiple onchange="handleFileImport(event)">
-                        <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()">Import Text</button>
-                        <button id="btn-theme" class="ff-btn ff-btn-secondary" onclick="toggleTheme()">Dark</button>
-                        <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()">Reset</button>
+                        <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">Import Text</button>
+                        <button id="btn-session-report" class="ff-btn ff-btn-secondary" onclick="showSessionReport()" data-i18n="btn.sessionReport">Session Report</button>
+                        <button id="btn-theme" class="ff-btn ff-btn-secondary" onclick="toggleTheme()" data-i18n="btn.theme.dark">Dark</button>
+                        <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()" data-i18n="btn.reset">Reset</button>
                     </div>
                 `;
             }
 
             const readingTitle = document.querySelector('.ff-reading-header h2');
-            if (readingTitle) readingTitle.textContent = 'Reading Area';
+            if (readingTitle) readingTitle.setAttribute('data-i18n', 'reading.area');
 
-            const keywordTitle = document.querySelector('.ff-keyword-header h3');
-            if (keywordTitle) keywordTitle.textContent = 'Paragraph Keywords';
+            const keywordTitle = document.querySelector('.ff-comprehension-header h3');
+            if (keywordTitle) keywordTitle.setAttribute('data-i18n', 'comprehension.title');
+
+            const comprehensionClose = document.getElementById('ff-comprehension-close');
+            if (comprehensionClose) {
+                comprehensionClose.onclick = () => {
+                    if (typeof FocusFlow !== 'undefined' && FocusFlow.closeComprehensionCard) {
+                        FocusFlow.closeComprehensionCard();
+                    } else if (FocusFlow.visualEffects) {
+                        FocusFlow.visualEffects.hideComprehensionCard();
+                    }
+                };
+            }
+
+            if (typeof FocusFlow !== 'undefined' && FocusFlow._removeLegacyKeywordPanels) {
+                FocusFlow._removeLegacyKeywordPanels();
+            }
 
             const cameraCard = document.getElementById('card-camera-sidebar');
             if (cameraCard) {
                 cameraCard.innerHTML = `
                     <div class="ff-card-header ff-card-header-collapsible" onclick="toggleSidebarCamera()">
-                        <div>
-                            <h2>Eye Tracking</h2>
-                            <p class="ff-card-kicker">WebGazer face mesh preview</p>
-                        </div>
-                        <div class="ff-camera-controls">
-                            <button id="btn-start-camera" class="ff-btn ff-btn-primary ff-btn-xs" onclick="event.stopPropagation(); toggleCamera()">Enable Camera</button>
-                            <span class="ff-badge ff-badge-soft" id="ff-camera-status">Waiting for permission</span>
-                            <span class="ff-collapse-icon" id="camera-collapse-icon">▾</span>
-                        </div>
+                        <h2 data-i18n="camera.title">Eye Tracking</h2>
+                        <span class="ff-collapse-icon" id="camera-collapse-icon">▾</span>
                     </div>
                     <div class="ff-card-body ff-camera-body" id="camera-sidebar-body">
-                        <div class="ff-camera-shell">
-                            <div class="ff-camera-preview" id="ff-webgazer-preview">
-                                <div class="ff-camera-reticle" aria-hidden="true"></div>
-                                <div class="ff-face-guide" aria-hidden="true"></div>
-                                <div class="ff-preview-badge">4:3 Preview</div>
-                                <div class="ff-camera-empty">
-                                    <strong>Real camera preview appears in the top-right</strong>
-                                    <span>After camera permission is allowed, WebGazer's green face mesh will appear.</span>
-                                </div>
-                            </div>
-                            <div class="ff-tracking-grid">
-                                <div class="ff-tracking-item"><span>Input Source</span><strong id="ff-cam-face">Waiting for permission</strong></div>
-                                <div class="ff-tracking-item"><span>Tracking Status</span><strong id="ff-cam-confidence">--</strong></div>
-                                <div class="ff-tracking-item"><span>Visual Feedback</span><strong id="ff-cam-pose">Green Mesh</strong></div>
-                                <div class="ff-tracking-item"><span>Cursor Meaning</span><strong id="ff-cam-gaze">Real Gaze</strong></div>
+                        <div class="ff-camera-preview" id="ff-webgazer-preview">
+                            <div class="ff-camera-reticle" aria-hidden="true"></div>
+                            <div class="ff-face-guide" aria-hidden="true"></div>
+                            <div class="ff-camera-empty">
+                                <strong data-i18n="camera.emptyTitle">Camera preview</strong>
+                                <span data-i18n="camera.emptySub">Switch to Eye mode in the header to show the WebGazer face mesh here.</span>
                             </div>
                         </div>
                     </div>
@@ -718,6 +807,19 @@
             }
 
             updateThemeButton(document.body.dataset.theme || 'light');
+            if (typeof I18n !== 'undefined') {
+                I18n.applyDocument();
+                I18n.bindLangToggle();
+            }
+            const focusContainer = document.getElementById('ff-focus-toggle-container');
+            if (focusContainer && typeof FocusMode !== 'undefined') {
+                focusContainer.innerHTML = FocusMode.createToggleHTML();
+                if (FocusFlow.focusMode) FocusFlow.focusMode.bindToggleButtons();
+            }
+            if (typeof syncTimerUI === 'function') syncTimerUI();
+            if (typeof syncTrackingToggleUI === 'function') syncTrackingToggleUI();
+            if (typeof bindTrackingToggle === 'function') bindTrackingToggle();
+            if (typeof syncGazeDotButtonUI === 'function') syncGazeDotButtonUI();
         }
 
         function initTheme() {
@@ -736,8 +838,57 @@
 
         function updateThemeButton(theme) {
             const btn = document.getElementById('btn-theme');
-            if (btn) btn.textContent = theme === 'dark' ? 'Light' : 'Dark';
+            if (!btn) return;
+            if (typeof I18n !== 'undefined') {
+                btn.textContent = I18n.t(theme === 'dark' ? 'btn.theme.light' : 'btn.theme.dark');
+            } else {
+                btn.textContent = theme === 'dark' ? 'Light' : 'Dark';
+            }
         }
+
+        function refreshLanguageUI() {
+            if (typeof I18n !== 'undefined') {
+                I18n.applyDocument();
+                I18n.bindLangToggle();
+            }
+            updateThemeButton(document.body.dataset.theme || 'light');
+
+            const container = document.getElementById('ff-focus-toggle-container');
+            if (container && typeof FocusMode !== 'undefined') {
+                container.innerHTML = FocusMode.createToggleHTML();
+                if (FocusFlow.focusMode) FocusFlow.focusMode.bindToggleButtons();
+            }
+
+            if (FocusFlow && FocusFlow.cognition && typeof FocusFlow.updateDashboard === 'function') {
+                const state = FocusFlow.cognition.getState();
+                const strategy = FocusFlow.decision ? FocusFlow.decision.currentDecision?.strategy : null;
+                FocusFlow.updateDashboard(state, strategy || {}, null);
+            }
+
+            if (FocusFlow && FocusFlow._cameraGateVisible && typeof FocusFlow._showCameraGate === 'function') {
+                FocusFlow._showCameraGate(FocusFlow._cameraGateReason || 'prompt');
+            }
+
+            if (FocusFlow && FocusFlow.readingView && FocusFlow.readingView.isParagraphDebugEnabled()) {
+                FocusFlow.readingView._syncParagraphDebugOverlays();
+            }
+
+            const paragraphDebugBtn = document.getElementById('btn-paragraph-debug');
+            if (paragraphDebugBtn && FocusFlow && FocusFlow.readingView) {
+                const enabled = FocusFlow.readingView.isParagraphDebugEnabled();
+                paragraphDebugBtn.classList.toggle('active', enabled);
+                paragraphDebugBtn.textContent = (typeof I18n !== 'undefined')
+                    ? I18n.t(enabled ? 'btn.paragraphDebugOn' : 'btn.paragraphDebug')
+                    : (enabled ? '¶ Debug ON' : '¶ Debug');
+            }
+
+            if (typeof syncTimerUI === 'function') syncTimerUI();
+            if (typeof syncTrackingToggleUI === 'function') syncTrackingToggleUI();
+            if (typeof bindTrackingToggle === 'function') bindTrackingToggle();
+            if (typeof syncGazeDotButtonUI === 'function') syncGazeDotButtonUI();
+        }
+
+        document.addEventListener('focusflow-lang-change', refreshLanguageUI);
 
         function renderRuntimeNotice() {
             const existing = document.getElementById('ff-runtime-notice');
@@ -749,17 +900,30 @@
 
             if (location.protocol === 'file:') {
                 notice.innerHTML = `
-                    <strong>Camera cannot start reliably in file:// mode</strong>
-                    <span>Start a local server: run <code>python -m http.server 8081</code> in the project folder, then open <code>http://127.0.0.1:8081</code>.</span>
+                    <strong>Camera cannot start in file:// mode</strong>
+                    <span>Run <code>npm start</code> in the project folder, then open <code>http://127.0.0.1:8080</code>.</span>
                 `;
                 document.body.prepend(notice);
                 return;
             }
 
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            const supported = typeof CameraAccess !== 'undefined'
+                ? CameraAccess.isSupported()
+                : !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            const secure = typeof CameraAccess !== 'undefined'
+                ? CameraAccess.isSecureEnough()
+                : (window.isSecureContext || location.protocol === 'https:');
+
+            if (!supported) {
                 notice.innerHTML = `
-                    <strong>This environment does not support the camera API</strong>
-                    <span>Use Chrome/Edge and open this page through localhost or HTTPS.</span>
+                    <strong>This browser does not support the camera API</strong>
+                    <span>Use Chrome, Edge, or Firefox and open via localhost or HTTPS.</span>
+                `;
+                document.body.prepend(notice);
+            } else if (!secure) {
+                notice.innerHTML = `
+                    <strong>Camera requires a secure page context</strong>
+                    <span>Open <code>http://127.0.0.1:8080</code> or <code>http://localhost:8080</code> instead of file:// or an insecure URL.</span>
                 `;
                 document.body.prepend(notice);
             }
@@ -775,208 +939,25 @@
         };
 
         function updateTrackingModeUI(mode, reason) {
-            const btn = document.getElementById('btn-start-camera');
-            const status = document.getElementById('ff-camera-status');
-            const face = document.getElementById('ff-cam-face');
-            const confidence = document.getElementById('ff-cam-confidence');
-            const pose = document.getElementById('ff-cam-pose');
-            const gaze = document.getElementById('ff-cam-gaze');
-
             if (mode === 'gaze') {
                 isCameraOn = true;
-                if (btn) {
-                    btn.textContent = 'Stop Camera';
-                    btn.className = 'ff-btn ff-btn-danger ff-btn-xs';
-                }
-                if (status) {
-                    status.textContent = 'Eye Tracking';
-                    status.style.background = '#4CAF50';
-                }
-                if (face) face.textContent = 'WebGazer';
-                if (confidence) confidence.textContent = 'Live';
-                if (pose) pose.textContent = 'Green Mesh';
-                if (gaze) gaze.textContent = 'Real Gaze';
-                return;
-            }
-
-            if (mode === 'runtime-error') {
-                isCameraOn = false;
-                if (btn) {
-                    btn.textContent = 'Local Server Needed';
-                    btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-                    btn.onclick = (event) => {
-                        event.stopPropagation();
-                        window.location.href = 'http://127.0.0.1:8081';
-                    };
-                }
-                if (status) {
-                    status.textContent = 'Runtime Environment Error';
-                    status.style.background = '#ef4444';
-                }
-                if (face) face.textContent = 'file://';
-                if (confidence) confidence.textContent = 'Unavailable';
-                if (pose) pose.textContent = 'Use localhost';
-                if (gaze) gaze.textContent = 'Waiting to restart';
-                renderRuntimeNotice();
-                return;
-            }
-
-            if (mode === 'camera-error') {
-                isCameraOn = false;
-                if (btn) {
-                    btn.textContent = 'Retry Camera';
-                    btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-                }
-                if (status) {
-                    status.textContent = 'Permission Needed';
-                    status.style.background = '#ef4444';
-                }
-                if (face) face.textContent = 'Not connected';
-                if (confidence) confidence.textContent = 'Failed';
-                if (pose) pose.textContent = 'Check Permission';
-                if (gaze) gaze.textContent = 'Waiting for camera';
-                document.body.classList.remove('ff-webgazer-visible', 'ff-webgazer-mounted');
-                const preview = document.getElementById('ff-webgazer-preview');
-                if (preview) preview.classList.remove('has-webgazer');
-                return;
-            }
-
-            if (mode === 'camera-error') {
-                isCameraOn = false;
-                if (btn) {
-                    btn.textContent = 'Retry Camera';
-                    btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-                }
-                if (status) {
-                    status.textContent = 'Permission Needed';
-                    status.style.background = '#ef4444';
-                }
-                if (face) face.textContent = 'Not connected';
-                if (confidence) confidence.textContent = 'Failed';
-                if (pose) pose.textContent = 'Check Permission';
-                if (gaze) gaze.textContent = 'Waiting for camera';
-                document.body.classList.remove('ff-webgazer-visible', 'ff-webgazer-mounted');
-                const preview = document.getElementById('ff-webgazer-preview');
-                if (preview) preview.classList.remove('has-webgazer');
-                return;
-            }
-
-            isCameraOn = false;
-            if (btn) {
-                btn.textContent = 'Enable Camera';
-                btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-            }
-            if (status) {
-                status.textContent = 'Mouse Tracking';
-                status.style.background = '#f59e0b';
-            }
-            if (face) face.textContent = 'Mouse Mode';
-            if (confidence) confidence.textContent = '--';
-            if (pose) pose.textContent = reason || 'Camera Closed';
-            if (gaze) gaze.textContent = 'Enable Mouse Tracking';
-        }
-
-        document.addEventListener('focusflow-tracking-mode', function(e) {
-            updateTrackingModeUI(e.detail.mode, e.detail.reason);
-        });
-
-        function updateTrackingModeUI(mode, reason) {
-            const btn = document.getElementById('btn-start-camera');
-            const status = document.getElementById('ff-camera-status');
-            const face = document.getElementById('ff-cam-face');
-            const confidence = document.getElementById('ff-cam-confidence');
-            const pose = document.getElementById('ff-cam-pose');
-            const gaze = document.getElementById('ff-cam-gaze');
-
-            if (mode === 'gaze') {
-                isCameraOn = true;
-                if (btn) {
-                    btn.textContent = 'Stop Camera';
-                    btn.className = 'ff-btn ff-btn-danger ff-btn-xs';
-                    btn.onclick = (event) => {
-                        event.stopPropagation();
-                        toggleCamera();
-                    };
-                }
-                if (status) {
-                    status.textContent = 'Eye Tracking';
-                    status.style.background = '#4CAF50';
-                }
-                if (face) face.textContent = 'WebGazer';
-                if (confidence) confidence.textContent = 'Live';
-                if (pose) pose.textContent = 'Green Mesh';
-                if (gaze) gaze.textContent = 'Real Gaze';
                 revealWebGazerPreview();
                 return;
             }
 
-            if (mode === 'runtime-error') {
-                isCameraOn = false;
-                if (btn) {
-                    btn.textContent = 'Local Server Needed';
-                    btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-                    btn.onclick = (event) => {
-                        event.stopPropagation();
-                        window.location.href = 'http://127.0.0.1:8081';
-                    };
-                }
-                if (status) {
-                    status.textContent = 'Runtime Environment Error';
-                    status.style.background = '#ef4444';
-                }
-                if (face) face.textContent = 'file://';
-                if (confidence) confidence.textContent = 'Unavailable';
-                if (pose) pose.textContent = 'Use localhost';
-                if (gaze) gaze.textContent = 'Waiting to restart';
-                renderRuntimeNotice();
-                return;
-            }
-
-            if (mode === 'camera-error') {
-                isCameraOn = false;
-                if (btn) {
-                    btn.textContent = 'Retry Camera';
-                    btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-                    btn.onclick = (event) => {
-                        event.stopPropagation();
-                        toggleCamera();
-                    };
-                }
-                if (status) {
-                    status.textContent = 'Permission Needed';
-                    status.style.background = '#ef4444';
-                }
-                if (face) face.textContent = 'Not connected';
-                if (confidence) confidence.textContent = 'Failed';
-                if (pose) pose.textContent = 'Check Permission';
-                if (gaze) gaze.textContent = 'Waiting for camera';
-                document.body.classList.remove('ff-webgazer-visible', 'ff-webgazer-mounted');
-                const preview = document.getElementById('ff-webgazer-preview');
-                if (preview) preview.classList.remove('has-webgazer');
-                return;
-            }
-
             isCameraOn = false;
-            if (btn) {
-                btn.textContent = 'Enable Camera';
-                btn.className = 'ff-btn ff-btn-primary ff-btn-xs';
-                btn.onclick = (event) => {
-                    event.stopPropagation();
-                    toggleCamera();
-                };
+            if (mode === 'runtime-error') {
+                renderRuntimeNotice();
             }
-            if (status) {
-                status.textContent = 'Mouse Tracking';
-                status.style.background = '#f59e0b';
-            }
-            if (face) face.textContent = 'Mouse Mode';
-            if (confidence) confidence.textContent = '--';
-            if (pose) pose.textContent = reason || 'Camera Closed';
-            if (gaze) gaze.textContent = 'Mouse Tracking';
             document.body.classList.remove('ff-webgazer-visible', 'ff-webgazer-mounted');
             const preview = document.getElementById('ff-webgazer-preview');
             if (preview) preview.classList.remove('has-webgazer');
         }
+
+        document.addEventListener('focusflow-tracking-mode', function(e) {
+            updateTrackingModeUI(e.detail.mode, e.detail.reason);
+            if (typeof syncTrackingToggleUI === 'function') syncTrackingToggleUI();
+        });
 
         function revealWebGazerPreview() {
             document.body.classList.add('ff-webgazer-visible');
@@ -997,59 +978,25 @@
         }
 
         async function startCamera() {
-            if (FocusFlow.stopDemoMode) {
+            if (FocusFlow.stopMouseTracking) {
+                FocusFlow.stopMouseTracking();
+            } else if (FocusFlow.stopDemoMode) {
                 FocusFlow.stopDemoMode();
             }
+
+            if (typeof FocusFlow.enableCameraTracking === 'function') {
+                await FocusFlow.enableCameraTracking();
+                return;
+            }
+
             FocusFlow.config.demoMode = false;
             FocusFlow.config.useWebGazer = true;
             FocusFlow.config.trackingMode = 'gaze';
-
-            await FocusFlow.startWebGazer();
-            if (!FocusFlow.config.demoMode && FocusFlow._setupGazeListener) {
-                FocusFlow._setupGazeListener();
-            }
-            return;
-
-            try {
-                // Check whether the media device API is available
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    const errMsg = 'The browser does not support the camera API (getUserMedia unavailable)';
-                    log('❌', errMsg);
-                    showApiError('Camera', errMsg, [
-                        '• Use the latest Chrome / Edge / Firefox browser',
-                        '• Open this page through HTTPS or localhost',
-                        '• Or use 🖱️ Demo Mode to try the experience'
-                    ]);
-                    return;
-                }
-
-                const video = document.getElementById('webcam');
-                cameraStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { width: 320, height: 240, facingMode: 'user' } 
-                });
-                video.srcObject = cameraStream;
-                await video.play();
-                
-                isCameraOn = true;
-                document.getElementById('btn-start-camera').textContent = '⏹️ Stop Camera';
-                document.getElementById('btn-start-camera').className = 'ff-btn ff-btn-danger';
-                document.getElementById('ff-camera-status').textContent = 'Connected';
-                document.getElementById('ff-camera-status').style.background = '#4CAF50';
-                
-                log('📷', 'Camera started');
-                
-                // Start face detection loop (350ms reduces CPU load / lag)
-                cameraInterval = setInterval(detectFace, 350);
-                
-            } catch (err) {
-                const friendlyMsg = getCameraErrorMessage(err);
-                log('❌', 'Camera startup failed: ' + friendlyMsg);
-                showApiError('Camera', 'Unable to access the camera', [
-                    '• Make sure camera permission is allowed from the browser address bar',
-                    '• If using file://, switch to localhost or HTTPS',
-                    '• Check whether another app is using the camera',
-                    '• Or click 🖱️ Start Demo Mode to simulate with the mouse'
-                ]);
+            await FocusFlow.startWebGazer({ force: true });
+            if (FocusFlow.config.trackingMode === 'gaze' && FocusFlow._finishCameraStartup) {
+                await FocusFlow._finishCameraStartup();
+            } else if (FocusFlow.switchToMouseTracking) {
+                FocusFlow.switchToMouseTracking('camera unavailable');
             }
         }
 
@@ -1122,36 +1069,27 @@
             if (FocusFlow.switchToMouseTracking) {
                 FocusFlow.switchToMouseTracking('camera closed by user');
             }
-            
+
             if (cameraInterval) {
                 clearInterval(cameraInterval);
                 cameraInterval = null;
             }
-            
+
             if (cameraStream) {
                 cameraStream.getTracks().forEach(track => track.stop());
                 cameraStream = null;
             }
-            
-            document.getElementById('webcam').srcObject = null;
-            document.getElementById('btn-start-camera').textContent = '📷 Start Camera';
-            document.getElementById('btn-start-camera').className = 'ff-btn ff-btn-primary';
-            document.getElementById('ff-camera-status').textContent = 'Not connected';
-            document.getElementById('ff-camera-status').style.background = '#666';
-            updateTrackingModeUI('mouse', 'camera closed');
-            
-            // Clear overlay
+
+            const webcam = document.getElementById('webcam');
+            if (webcam) webcam.srcObject = null;
+
             const canvas = document.getElementById('face-overlay');
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Reset camera info
-            document.getElementById('ff-cam-face').textContent = '---';
-            document.getElementById('ff-cam-confidence').textContent = '---';
-            document.getElementById('ff-cam-pose').textContent = '---';
-            document.getElementById('ff-cam-gaze').textContent = '---';
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+
             updateTrackingModeUI('mouse', 'camera closed');
-            
             log('📷', 'Camera stopped');
         }
         async function detectFace() {
@@ -1224,10 +1162,16 @@
                 ctx.fillText('❌ No face detected', 10, 20);
             }
             
-            // Update info panel
-            document.getElementById('ff-cam-face').textContent = facePresent ? '✅ Detected' : '❌ Not detected';
-            document.getElementById('ff-cam-face').style.color = facePresent ? '#4CAF50' : '#F44336';
-            document.getElementById('ff-cam-confidence').textContent = (confidence * 100).toFixed(0) + '%';
+            // Update info panel (legacy webcam path — elements may be absent)
+            const camFace = document.getElementById('ff-cam-face');
+            const camConfidence = document.getElementById('ff-cam-confidence');
+            const camPose = document.getElementById('ff-cam-pose');
+            const camGaze = document.getElementById('ff-cam-gaze');
+            if (camFace) {
+                camFace.textContent = facePresent ? '✅ Detected' : '❌ Not detected';
+                camFace.style.color = facePresent ? '#4CAF50' : '#F44336';
+            }
+            if (camConfidence) camConfidence.textContent = (confidence * 100).toFixed(0) + '%';
             
             // Estimate head pose (simplified from face box aspect ratio)
             if (facePresent && faceBox) {
@@ -1235,17 +1179,17 @@
                 let pose = 'Front';
                 if (aspectRatio > 1.2) pose = 'Left / Right';
                 else if (aspectRatio < 0.7) pose = 'Up / Down';
-                document.getElementById('ff-cam-pose').textContent = pose;
+                if (camPose) camPose.textContent = pose;
                 
                 // Estimate gaze region based on face position
                 const cx = faceBox.x + faceBox.width / 2;
                 const cy = faceBox.y + faceBox.height / 2;
                 const vRegion = cy < canvas.height * 0.33 ? 'Top' : (cy > canvas.height * 0.66 ? 'Bottom' : 'Center');
                 const hRegion = cx < canvas.width * 0.33 ? 'Left' : (cx > canvas.width * 0.66 ? 'Right' : 'Center');
-                document.getElementById('ff-cam-gaze').textContent = vRegion + '-' + hRegion;
+                if (camGaze) camGaze.textContent = vRegion + '-' + hRegion;
             } else {
-                document.getElementById('ff-cam-pose').textContent = '---';
-                document.getElementById('ff-cam-gaze').textContent = '---';
+                if (camPose) camPose.textContent = '---';
+                if (camGaze) camGaze.textContent = '---';
             }
             
             // Feed face data into FocusFlow perception system
@@ -1514,6 +1458,11 @@
         // ====== UI UPDATE ======
         function updateUI() {
             if (!FocusFlow.cognition || !FocusFlow.decision) return;
+            if (document.hidden) return;
+
+            if (typeof FocusFlow.runCognitionTick === 'function') {
+                FocusFlow.runCognitionTick();
+            }
             
             const state = FocusFlow.cognition.getState();
             const probs = FocusFlow.cognition.getProbabilities();
@@ -1521,8 +1470,12 @@
             const profile = FocusFlow.decision.getUserProfile();
             const thresholds = FocusFlow.decision.adaptiveThreshold.getThresholds();
             
-            // Update state display
-            updateStateDisplay(state, probs);
+            // Update state display (text via FocusFlow.updateDashboard to avoid i18n flicker)
+            if (typeof FocusFlow.updateDashboard === 'function') {
+                const strategy = decision && decision.strategy ? decision.strategy : {};
+                FocusFlow.updateDashboard(state, strategy, null);
+            }
+            updateStateCardStyle(state, probs);
             
             // Update strategy
             if (decision && decision.strategy) {
@@ -1549,44 +1502,37 @@
             updateFeatureDisplay();
         }
 
-        function updateStateDisplay(state, probs) {
+        function updateStateCardStyle(state, probs) {
             const iconEl = document.getElementById('ff-state-icon');
             const nameEl = document.getElementById('ff-state-name');
-            const descEl = document.getElementById('ff-state-desc');
             const durEl = document.getElementById('ff-state-duration');
             const confEl = document.getElementById('ff-state-confidence');
             
             if (!state) return;
             
-            // Color mapping
             const colors = {
                 'Normal': '#4CAF50',
                 'Distracted': '#FF9800',
                 'Struggling': '#F44336',
-                'Recovering': '#2196F3'
+                'Recovering': '#2196F3',
+                'OffScreen': '#9E9E9E'
             };
             const icons = {
                 'Normal': '🧠',
                 'Distracted': '👀',
                 'Struggling': '🤔',
-                'Recovering': '🔄'
-            };
-            const descs = {
-                'Normal': 'Focused reading',
-                'Distracted': 'Distracted',
-                'Struggling': 'Struggling',
-                'Recovering': 'Recovering'
+                'Recovering': '🔄',
+                'OffScreen': '🚶'
             };
             
-            iconEl.textContent = icons[state.name] || '🧠';
-            nameEl.textContent = state.name;
-            nameEl.style.color = colors[state.name] || '#fff';
-            descEl.textContent = descs[state.name] || '';
-            durEl.textContent = (state.duration / 1000).toFixed(1);
-            confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
-            confEl.style.backgroundColor = colors[state.name] || '#666';
+            if (iconEl) iconEl.textContent = icons[state.name] || '🧠';
+            if (nameEl) nameEl.style.color = colors[state.name] || '#fff';
+            if (durEl) durEl.textContent = (state.duration / 1000).toFixed(1);
+            if (confEl) {
+                confEl.textContent = (state.confidence * 100).toFixed(0) + '%';
+                confEl.style.backgroundColor = colors[state.name] || '#666';
+            }
             
-            // Update the card border color
             const cardState = document.getElementById('card-state');
             if (cardState) {
                 cardState.style.borderColor = colors[state.name] || '#1e293b';
@@ -1661,7 +1607,7 @@
                         ],
                         borderWidth: 2,
                         borderRadius: 4,
-                        barThickness: 40
+                        barThickness: 24
                     }]
                 },
                 options: {
@@ -1679,7 +1625,7 @@
                             grid: { color: '#333' }
                         },
                         x: {
-                            ticks: { color: '#ccc' },
+                            ticks: { color: '#ccc', font: { size: 10 } },
                             grid: { display: false }
                         }
                     },
@@ -1804,10 +1750,52 @@
             let loadedCount = 0;
             let unsupportedFiles = [];
 
+            function pushDecodedText(file, text) {
+                allTexts.push({
+                    name: file.name,
+                    text: text,
+                    size: text.length
+                });
+                totalSize += text.length;
+                loadedCount++;
+                checkAllLoaded();
+            }
+
+            function decodePlainTextFile(file) {
+                const decode = (typeof TextEncoding !== 'undefined' && TextEncoding.decodeFile)
+                    ? TextEncoding.decodeFile(file)
+                    : new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsText(file, 'UTF-8');
+                    });
+
+                return decode
+                    .then(text => {
+                        const cleaned = String(text || '').replace(/\u0000/g, '');
+                        const controlCount = (cleaned.match(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g) || []).length;
+                        const controlRatio = cleaned.length > 0 ? controlCount / cleaned.length : 1;
+                        const suspiciouslyLarge = cleaned.length > Math.max(file.size * 3, 300000);
+                        if (!cleaned.trim() || controlRatio > 0.02 || suspiciouslyLarge) {
+                            throw new Error('Decoded text appears corrupted or binary');
+                        }
+                        pushDecodedText(file, cleaned);
+                    })
+                    .catch(function(err) {
+                        console.warn('Text decode failed:', err);
+                        unsupportedFiles.push(file.name + ' (text decode failed)');
+                        loadedCount++;
+                        checkAllLoaded();
+                    });
+            }
+
             files.forEach(file => {
                 const ext = file.name.split('.').pop().toLowerCase();
-                const isDocx = (ext === 'docx' || ext === 'doc');
-                const isPptx = (ext === 'pptx' || ext === 'ppt');
+                const isDocx = ext === 'docx';
+                const isDoc = ext === 'doc';
+                const isPptx = ext === 'pptx';
+                const isPpt = ext === 'ppt';
                 const isPdf = (ext === 'pdf');
                 const isImage = ['png','jpg','jpeg','gif','bmp','webp','svg'].includes(ext);
                 const isPlainText = ['txt','md','csv','json','xml','html','cpp','c','h','py','js','ts','css','java','rs','go','rb','sh','yaml','yml','toml','ini','cfg','log'].includes(ext);
@@ -1819,27 +1807,11 @@
                         const arrayBuffer = e.target.result;
                         mammoth.extractRawText({ arrayBuffer: arrayBuffer })
                             .then(function(result) {
-                                const text = result.value;
-                                allTexts.push({
-                                    name: file.name,
-                                    text: text,
-                                    size: text.length
-                                });
-                                totalSize += text.length;
-                                loadedCount++;
-                                checkAllLoaded();
+                                pushDecodedText(file, result.value);
                             })
                             .catch(function(err) {
-                                console.warn('Mammoth failed, trying plain text:', err);
-                                const reader2 = new FileReader();
-                                reader2.onload = function(ev) {
-                                    const text = ev.target.result;
-                                    allTexts.push({ name: file.name, text: text, size: text.length });
-                                    totalSize += text.length;
-                                    loadedCount++;
-                                    checkAllLoaded();
-                                };
-                                reader2.readAsText(file);
+                                console.warn('Mammoth failed, trying encoded text fallback:', err);
+                                decodePlainTextFile(file);
                             });
                     };
                     reader.readAsArrayBuffer(file);
@@ -1930,28 +1902,25 @@
                             });
                     };
                     reader.readAsArrayBuffer(file);
+                } else if (isDoc) {
+                    unsupportedFiles.push(file.name + ' (.doc binary format is not supported; please convert to .docx)');
+                    loadedCount++;
+                    checkAllLoaded();
+                } else if (isPpt) {
+                    unsupportedFiles.push(file.name + ' (.ppt binary format is not supported; please convert to .pptx)');
+                    loadedCount++;
+                    checkAllLoaded();
                 } else if (isPdf || isImage) {
                     // Image files (or PDF when pdf.js unavailable): no text extraction
                     unsupportedFiles.push(file.name + (isImage ? ' (Image text extraction is not supported yet)' : ' (PDF parser not loaded)'));
                     loadedCount++;
                     checkAllLoaded();
+                } else if (isPlainText) {
+                    decodePlainTextFile(file);
                 } else {
-
-                    // Plain text files (txt, md, code files, etc.)
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const text = e.target.result;
-                        allTexts.push({
-                            name: file.name,
-                            text: text,
-                            size: text.length
-                        });
-                        totalSize += text.length;
-                        loadedCount++;
-                        checkAllLoaded();
-                    };
-                    // Auto-detect encoding: try UTF-8 first
-                    reader.readAsText(file, 'UTF-8');
+                    unsupportedFiles.push(file.name + ' (unsupported format)');
+                    loadedCount++;
+                    checkAllLoaded();
                 }
             });
 
@@ -1960,19 +1929,29 @@
 
                 // Show unsupported file warnings
                 if (unsupportedFiles.length > 0) {
-                    log('⚠️', `${unsupportedFiles.length} files could not be parsed: ${unsupportedFiles.join(', ')}`);
+                    const t = (key, params) => (typeof I18n !== 'undefined' ? I18n.t(key, params) : key);
+                    log('⚠️', t('import.failed', { count: unsupportedFiles.length, files: unsupportedFiles.join(', ') }));
                 }
 
                 if (allTexts.length === 0) {
-                    log('❌', 'No readable text found. Please import .txt, .md, .cpp, .docx, or similar formats.');
+                    const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
+                    log('❌', t('import.none'));
                     event.target.value = '';
                     return;
                 }
 
                 const mergedLabel = allTexts.length === 1 ? allTexts[0].name : `${allTexts.length} files`;
-                const mergedText = allTexts.map(f =>
+                const mergedTextRaw = allTexts.map(f =>
                     `\n=== 📄 ${f.name} ===\n\n${f.text}`
                 ).join('\n');
+                const MAX_IMPORT_CHARS = 220000;
+                const mergedText = mergedTextRaw.length > MAX_IMPORT_CHARS
+                    ? mergedTextRaw.slice(0, MAX_IMPORT_CHARS)
+                    : mergedTextRaw;
+
+                if (mergedTextRaw.length > MAX_IMPORT_CHARS) {
+                    log('⚠️', `Imported text is very large (${Math.round(mergedTextRaw.length / 1024)} KB). Truncated to ${Math.round(MAX_IMPORT_CHARS / 1024)} KB for smooth performance.`);
+                }
 
                 // Use ReadingView.loadFromText if available
                 if (FocusFlow.readingView && typeof FocusFlow.readingView.loadFromText === 'function') {
@@ -1991,16 +1970,35 @@
                     }
                 }
 
-                log('📂', `Imported ${allTexts.length} files (${(totalSize / 1024).toFixed(1)} KB)`);
+                const t = (key, params) => (typeof I18n !== 'undefined' ? I18n.t(key, params) : key);
+                log('📂', t('import.success', { count: allTexts.length, size: (totalSize / 1024).toFixed(1) }));
                 allTexts.forEach(f => log('  📄', f.name + ` (${(f.size / 1024).toFixed(1)} KB)`));
 
                 // Reset state for new content
                 if (FocusFlow.analytics) {
                     FocusFlow.analytics.resetSession();
                 }
-                if (FocusFlow._keywordsShownForBlock) {
-                    FocusFlow._keywordsShownForBlock = new Set();
+                if (FocusFlow._autoTriggeredForBlock) {
+                    FocusFlow._autoTriggeredForBlock = new Set();
                 }
+                if (FocusFlow._blockSummaryCache) {
+                    FocusFlow._blockSummaryCache = {};
+                }
+                if (FocusFlow._summaryGenerationInProgress) {
+                    FocusFlow._summaryGenerationInProgress = new Set();
+                }
+                if (FocusFlow._assistPrefetchStartedFor) {
+                    FocusFlow._assistPrefetchStartedFor = new Set();
+                }
+                if (FocusFlow.llmSummaryManager) {
+                    FocusFlow.llmSummaryManager.reset();
+                    FocusFlow.llmSummaryManager.preloadDocument(FocusFlow._allBlockTexts, FocusFlow.readingView.getDocumentLang());
+                }
+                if (FocusFlow.visualEffects) {
+                    FocusFlow.visualEffects.hideComprehensionCard();
+                }
+                FocusFlow._comprehensionCardBlock = -1;
+                FocusFlow._precomputeParagraphSummaries();
                 FocusFlow._initBlockWordCounts();
             }
 
@@ -2023,6 +2021,12 @@
             if (FocusFlow.perception) FocusFlow.perception.reset();
             if (FocusFlow.cognition) FocusFlow.cognition.reset();
             if (FocusFlow.decision) FocusFlow.decision.reset();
+            if (FocusFlow._autoTriggeredForBlock) FocusFlow._autoTriggeredForBlock = new Set();
+            if (FocusFlow._blockSummaryCache) FocusFlow._blockSummaryCache = {};
+            if (FocusFlow._summaryGenerationInProgress) FocusFlow._summaryGenerationInProgress = new Set();
+            if (FocusFlow._assistPrefetchStartedFor) FocusFlow._assistPrefetchStartedFor = new Set();
+            if (FocusFlow.visualEffects) FocusFlow.visualEffects.hideComprehensionCard();
+            FocusFlow._comprehensionCardBlock = -1;
             
             timelineHistory = [];
             simState = {
@@ -2066,7 +2070,7 @@
         };
 
         window.openGoalDialog = function() {
-            // Remove any existing dialog
+            const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
             const existing = document.querySelector('.ff-dialog-overlay');
             if (existing) existing.remove();
 
@@ -2075,27 +2079,26 @@
             overlay.innerHTML = `
                 <div class="ff-dialog">
                     <div class="ff-dialog-header">
-                        <h3>🎯 Set Reading Goal</h3>
+                        <h3>🎯 ${t('goal.dialogTitle')}</h3>
                         <button class="ff-dialog-close" onclick="this.closest('.ff-dialog-overlay').remove()">&times;</button>
                     </div>
                     <div class="ff-dialog-body">
-                        <label>📖 Target words (blank = unlimited)</label>
+                        <label>📖 ${t('goal.wordsLabel')}</label>
                         <input type="number" id="goal-input-words" placeholder="e.g. 5000" min="100" step="100" value="${sessionGoal.targetWords || ''}">
-                        <label>⏱️ Time limit (minutes, blank = unlimited)</label>
+                        <label>⏱️ ${t('goal.timeLabel')}</label>
                         <input type="number" id="goal-input-time" placeholder="e.g. 30" min="1" step="5" value="${sessionGoal.timeLimit || ''}">
                         <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">
-                            💡 After setting a goal, progress is tracked live. A summary report is generated at the end.
+                            💡 ${t('goal.hint')}
                         </p>
                     </div>
                     <div class="ff-dialog-footer">
-                        <button class="ff-btn ff-btn-secondary" onclick="this.closest('.ff-dialog-overlay').remove()">Cancel</button>
-                        <button class="ff-btn ff-btn-primary" onclick="saveGoalSettings()">✅ Save Goal</button>
+                        <button class="ff-btn ff-btn-secondary" onclick="this.closest('.ff-dialog-overlay').remove()">${t('btn.cancel')}</button>
+                        <button class="ff-btn ff-btn-primary" onclick="saveGoalSettings()">✅ ${t('btn.saveGoal')}</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
 
-            // Close on overlay click
             overlay.addEventListener('click', function(e) {
                 if (e.target === overlay) overlay.remove();
             });
@@ -2280,5 +2283,18 @@
         // Add periodic goal display update
         setInterval(updateGoalDisplay, 5000);
     </script>
+
+    <!-- Comprehension assist card (fixed, anchored to active paragraph) -->
+    <div class="ff-comprehension-card" id="ff-comprehension-card" hidden>
+        <div class="ff-comprehension-header">
+            <div>
+                <h3 data-i18n="comprehension.title">📋 Paragraph Overview</h3>
+                <span class="ff-comprehension-meta" id="ff-comprehension-meta"></span>
+            </div>
+            <button class="ff-comprehension-close" id="ff-comprehension-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="ff-comprehension-body" id="ff-comprehension-body"></div>
+        <p class="ff-comprehension-hint" data-i18n="comprehension.hint">Close anytime — use the paragraph button to reopen.</p>
+    </div>
 </body>
 </html>

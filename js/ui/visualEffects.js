@@ -526,50 +526,153 @@ class VisualEffects {
     }
 
     /**
-     * Show keyword popup with extracted keywords (called from main.js)
-     * @param {Array} keywords - [{word, score}, ...]
+     * Show dwell-triggered comprehension assist card (anchored to active paragraph).
      */
-    showKeywords(keywords) {
-        if (!keywords || keywords.length === 0) return;
-        
-        const panel = document.createElement('div');
-        panel.style.cssText = `
-            position: fixed;
-            bottom: 100px;
-            right: 30px;
-            z-index: 1001;
-            background: rgba(17, 24, 39, 0.92);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(107, 159, 255, 0.3);
-            border-radius: 12px;
-            padding: 14px 18px;
-            min-width: 160px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            animation: ffPromptIn 0.4s ease-out;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        `;
-        
-        panel.innerHTML = `
-            <div style="font-size: 11px; color: #60a5fa; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
-                🔑 Key Terms
-            </div>
-            ${keywords.map(kw => `
-                <div style="display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px;">
-                    <span style="color: #e2e8f0;">${kw.word}</span>
-                    <span style="color: #64748b; font-family: monospace; font-size: 11px;">${(kw.score * 100).toFixed(0)}%</span>
-                </div>
-            `).join('')}
-        `;
-        
-        document.body.appendChild(panel);
-        
-        setTimeout(() => {
-            panel.style.transition = 'opacity 0.4s ease';
-            panel.style.opacity = '0';
-            setTimeout(() => {
-                if (panel.parentNode) panel.parentNode.removeChild(panel);
-            }, 500);
-        }, 5000);
+    setComprehensionAnchor(element) {
+        this._comprehensionAnchor = element || null;
+        this._ensureComprehensionCard();
+        this._bindComprehensionPositionListeners();
+        this.updateComprehensionPosition();
+    }
+
+    _ensureComprehensionCard() {
+        let card = document.getElementById('ff-comprehension-card');
+        if (!card) return;
+        if (card.parentElement !== document.body) {
+            document.body.appendChild(card);
+        }
+    }
+
+    _bindComprehensionPositionListeners() {
+        if (this._comprehensionPositionBound) return;
+        this._comprehensionPositionBound = true;
+        this._onComprehensionReposition = () => this.updateComprehensionPosition();
+        window.addEventListener('resize', this._onComprehensionReposition);
+        window.addEventListener('scroll', this._onComprehensionReposition, true);
+        const readingContent = document.getElementById('ff-reading-content');
+        if (readingContent) {
+            readingContent.addEventListener('scroll', this._onComprehensionReposition);
+        }
+    }
+
+    _unbindComprehensionPositionListeners() {
+        if (!this._comprehensionPositionBound) return;
+        this._comprehensionPositionBound = false;
+        window.removeEventListener('resize', this._onComprehensionReposition);
+        window.removeEventListener('scroll', this._onComprehensionReposition, true);
+        const readingContent = document.getElementById('ff-reading-content');
+        if (readingContent) {
+            readingContent.removeEventListener('scroll', this._onComprehensionReposition);
+        }
+    }
+
+    updateComprehensionPosition() {
+        const card = document.getElementById('ff-comprehension-card');
+        const anchor = this._comprehensionAnchor;
+        if (!card || card.hidden || !anchor) return;
+
+        const rect = anchor.getBoundingClientRect();
+        const margin = 8;
+        const cardW = card.offsetWidth || 320;
+        const cardH = card.offsetHeight || 160;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        let left = rect.right - cardW;
+        let top = rect.bottom - cardH;
+
+        if (top < rect.top + margin) {
+            top = rect.bottom + margin;
+        }
+
+        left = Math.max(margin, Math.min(left, vw - cardW - margin));
+        top = Math.max(margin, Math.min(top, vh - cardH - margin));
+
+        card.style.left = `${Math.round(left)}px`;
+        card.style.top = `${Math.round(top)}px`;
+        card.style.right = 'auto';
+        card.style.bottom = 'auto';
+    }
+
+    showComprehensionLoading(payload) {
+        const card = document.getElementById('ff-comprehension-card');
+        const body = document.getElementById('ff-comprehension-body');
+        const meta = document.getElementById('ff-comprehension-meta');
+        if (!card || !body) return;
+
+        const t = (key, params) => {
+            if (typeof I18n !== 'undefined') return I18n.t(key, params);
+            return key;
+        };
+
+        if (meta) {
+            meta.textContent = t('comprehension.meta', {
+                index: payload.paragraphNumber || (payload.blockIndex + 1),
+                seconds: payload.dwellSeconds || 0
+            });
+        }
+
+        body.innerHTML = `<div class="ff-comprehension-loading"><span class="ff-comprehension-spinner"></span>${t('comprehension.loading')}</div>`;
+        card.hidden = false;
+        card.classList.add('is-visible', 'is-loading');
+        this._comprehensionVisible = true;
+        this.updateComprehensionPosition();
+    }
+
+    showComprehensionCard(payload) {
+        const card = document.getElementById('ff-comprehension-card');
+        const body = document.getElementById('ff-comprehension-body');
+        const meta = document.getElementById('ff-comprehension-meta');
+        if (!card || !body) return;
+
+        this._removeLegacyKeywordPanels();
+
+        const t = (key, params) => {
+            if (typeof I18n !== 'undefined') return I18n.t(key, params);
+            return key;
+        };
+
+        if (meta) {
+            meta.textContent = t('comprehension.meta', {
+                index: payload.paragraphNumber || (payload.blockIndex + 1),
+                seconds: payload.dwellSeconds || 0
+            });
+        }
+
+        body.textContent = payload.summary || '';
+        card.classList.remove('is-loading');
+        const wasVisible = this._comprehensionVisible && !card.classList.contains('is-loading');
+        card.hidden = false;
+        card.classList.add('is-visible');
+        if (!wasVisible) {
+            card.classList.remove('ff-comprehension-card--update');
+            void card.offsetWidth;
+            card.classList.add('ff-comprehension-card--enter');
+        } else {
+            card.classList.add('ff-comprehension-card--update');
+        }
+        this._comprehensionVisible = true;
+        requestAnimationFrame(() => this.updateComprehensionPosition());
+    }
+
+    _removeLegacyKeywordPanels() {
+        document.querySelectorAll('[data-ff-legacy-keyword]').forEach((el) => el.remove());
+    }
+
+    hideComprehensionCard() {
+        const card = document.getElementById('ff-comprehension-card');
+        if (!card) return;
+        card.hidden = true;
+        card.classList.remove('is-visible', 'ff-comprehension-card--enter', 'ff-comprehension-card--update', 'is-loading');
+        this._comprehensionVisible = false;
+        this._comprehensionAnchor = null;
+    }
+
+    /**
+     * @deprecated Keyword popup removed — comprehension card only.
+     */
+    showKeywords() {
+        this._removeLegacyKeywordPanels();
     }
 
     /**
@@ -585,6 +688,8 @@ class VisualEffects {
         }
         this.hideGazeGlow();
         this.showWakeupOverlay(false);
+        this.hideComprehensionCard();
+        this._unbindComprehensionPositionListeners();
         this.milestoneShown.clear();
         this.currentState = 'Normal';
     }

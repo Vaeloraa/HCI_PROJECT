@@ -2,7 +2,7 @@
  * FocusFlow Service Worker - PWA Offline Support
  * Caches all local assets for offline use
  */
-const CACHE_NAME = 'focusflow-v2';
+const CACHE_NAME = 'focusflow-v20';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -20,12 +20,19 @@ const STATIC_ASSETS = [
   '/js/decision/decisionModule.js',
   '/js/decision/adaptiveThreshold.js',
   '/js/decision/interventionStrategy.js',
+  '/js/ui/paragraphSplitter.js',
+  '/js/i18n/i18n.js',
+  '/js/utils/textEncoding.js',
+  '/js/utils/cameraAccess.js',
   '/js/ui/readingView.js',
   '/js/ui/visualEffects.js',
   '/js/ui/focusMode.js',
   '/js/ui/debugPanel.js',
   '/js/nlp/keywordExtractor.js',
+  '/js/nlp/llmSummaryManager.js',
+  '/js/nlp/paragraphSummarizer.js',
   '/js/analytics/attentionAnalytics.js',
+  '/js/analytics/sessionReport.js',
   '/js/calibration/calibrationManager.js',
   '/manifest.json'
 ];
@@ -62,6 +69,15 @@ self.addEventListener('fetch', (event) => {
 
   // Skip chrome-extension and cdn requests
   const url = event.request.url;
+
+  // Always fetch JS/CSS/HTML from network to avoid stale comprehension-assist code
+  if (url.includes('/js/') || url.includes('/css/') || url.endsWith('.html') || url.endsWith('/')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   if (url.startsWith('chrome-extension://') || url.includes('cdn.jsdelivr.net')) {
     return;
   }

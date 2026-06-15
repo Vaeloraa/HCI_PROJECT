@@ -146,15 +146,22 @@ class StateMachine {
         let pDistracted = 0;
         let pStruggling = 0;
         let pRecovering = 0;
+
+        const faceTracking = features.faceTracking === true;
+        const dwellSeconds = features.dwellTime / 1000;
         
         // --- Evidence for NORMAL state ---
         const evidenceNormal = [];
         
-        // Face present strongly suggests normal
-        if (features.facePresent) {
-            evidenceNormal.push(0.4);
-        } else {
-            evidenceNormal.push(-0.3);
+        // Face present strongly suggests normal (eye-tracking mode only)
+        if (faceTracking) {
+            if (features.facePresent) {
+                evidenceNormal.push(0.4);
+            } else {
+                evidenceNormal.push(-0.3);
+            }
+        } else if (features.interactionActive) {
+            evidenceNormal.push(0.25);
         }
         
         // Active interaction suggests normal
@@ -170,7 +177,6 @@ class StateMachine {
         }
         
         // Normal gaze dwell time (not too long, not too short)
-        const dwellSeconds = features.dwellTime / 1000;
         if (dwellSeconds > 1 && dwellSeconds < 6) {
             evidenceNormal.push(0.1);
         }
@@ -185,8 +191,8 @@ class StateMachine {
         // --- Evidence for DISTRACTED state ---
         const evidenceDistracted = [];
         
-        // No face = very likely distracted
-        if (!features.facePresent && features.faceAbsentDuration > 2000) {
+        // No face = very likely distracted (eye-tracking mode)
+        if (faceTracking && !features.facePresent && features.faceAbsentDuration > 2000) {
             evidenceDistracted.push(0.5);
         }
         
@@ -195,9 +201,12 @@ class StateMachine {
             evidenceDistracted.push(0.4);
         }
         
-        // High idle duration
+        // High idle duration (mouse mode primary signal)
         if (features.idleDuration > 3000) {
             evidenceDistracted.push(0.3);
+        }
+        if (!faceTracking && features.idleDuration > 5000) {
+            evidenceDistracted.push(0.35);
         }
         
         // High attention dispersion (gaze jumping around)
@@ -215,13 +224,14 @@ class StateMachine {
             evidenceStruggling.push(0.5);
         }
         
-        // No scrolling despite face present
-        if (features.facePresent && !features.isScrolling && features.scrollIdleDuration > 5000) {
-            evidenceStruggling.push(0.3);
+        // Long pause without scrolling (works in mouse and eye mode)
+        if (!features.isScrolling && features.scrollIdleDuration > 5000 && dwellSeconds > 5) {
+            evidenceStruggling.push(faceTracking && features.facePresent ? 0.3 : 0.25);
         }
         
-        // Low scroll velocity + face present (user is staring but not progressing)
-        if (features.facePresent && features.scrollVelocity < 0.5 && dwellSeconds > 5) {
+        // Low scroll velocity while staring at same region
+        if (features.scrollVelocity < 0.5 && dwellSeconds > 5 &&
+            (features.facePresent || !faceTracking)) {
             evidenceStruggling.push(0.2);
         }
         
@@ -283,18 +293,56 @@ class StateMachine {
     }
 
     /**
+     * Resolve state object from display name (e.g. "Distracted" → STATES.DISTRACTED)
+     */
+    _getStateByName(name) {
+        for (const state of Object.values(this.STATES)) {
+            if (state.name === name) return state;
+        }
+        return null;
+    }
+
+    /**
      * Decide which state to transition to based on probabilities
      * @param {Object} probs - State probabilities
      * @param {Object} features - Current features
      * @returns {Object|null} New state or null if no change
      */
     _decideTransition(probs, features) {
-        // Don't transition too frequently
-        if (this._stateDuration < this.thresholds.normalTransitionCooldown) {
+        // Don't transition too frequently (use live clock, not last pipeline tick)
+        const stateDuration = performance.now() - this._stateStartTime;
+        if (stateDuration < this.thresholds.normalTransitionCooldown) {
             return null;
         }
-        
+
         const currentName = this._currentState.name;
+        const faceTracking = features.faceTracking === true;
+
+        // Clear threshold rules (especially for mouse-only mode)
+        if (!faceTracking) {
+            if (currentName === 'Normal' &&
+                !features.interactionActive &&
+                features.idleDuration >= this.thresholds.distractionNoInteraction) {
+                return this.STATES.DISTRACTED;
+            }
+            if ((currentName === 'Normal' || currentName === 'Distracted') &&
+                features.dwellTime >= this.thresholds.strugglingDwellTime &&
+                !features.isScrolling) {
+                return this.STATES.STRUGGLING;
+            }
+            if (currentName === 'Distracted' && features.interactionActive) {
+                return this.STATES.RECOVERING;
+            }
+            if (currentName === 'Recovering' &&
+                features.interactionActive &&
+                stateDuration >= this.thresholds.recoveringStableTime) {
+                return this.STATES.NORMAL;
+            }
+            if (currentName === 'Struggling' &&
+                (features.isScrolling || features.isMoving)) {
+                return this.STATES.NORMAL;
+            }
+        }
         
         // Get the most probable state (but with hysteresis)
         let maxProb = 0;
@@ -311,7 +359,7 @@ class StateMachine {
         
         // Only transition if probability is high enough
         if (maxProb > 0.4 && maxState !== currentName) {
-            return this.STATES[maxState];
+            return this._getStateByName(maxState);
         }
         
         return null;
@@ -367,12 +415,13 @@ class StateMachine {
      * @returns {Object} Current state object
      */
     getState() {
+        const now = performance.now();
         return {
             ...this._currentState,
             confidence: this._stateProbabilities[this._currentState.name],
-            duration: this._stateDuration,
+            duration: now - this._stateStartTime,
             startTime: this._stateStartTime,
-            timestamp: performance.now()
+            timestamp: now
         };
     }
 

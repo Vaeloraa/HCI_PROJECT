@@ -48,11 +48,35 @@ class AttentionAnalytics {
         this.maxSessions = 10;           // Keep last 10 sessions
         
         // Block timing
-        this.blockDwellTimes = {};       // blockId -> total ms spent
+        this.blockDwellTimes = {};       // blockIndex -> total ms spent
         this.blockEntryTime = {};
+        this._lastGazeBlockIndex = -1;
+        this._lastGazeSampleTime = null;
+
+        // Recovery & comprehension assist (Member C)
+        this.recoveryEpisodes = [];      // { distractionMs, recoveryMs }
+        this._pendingDistractionStart = null;
+        this.stateTimeline = [];         // { state, durationMs, timestamp }
+        this._lastStateName = 'Normal';
+        this._lastStateChangeTime = Date.now();
+        this.comprehensionAssists = [];  // blockIndex values
+        
+        // Sample timing for reading-time accumulation
+        this._lastSampleTime = Date.now();
+        this._maxAttentionSamples = 500;
+        this._maxReadingSpeedSamples = 100;
         
         // Auto-save interval
         this._saveInterval = setInterval(() => this._autoSave(), 30000);
+    }
+
+    /**
+     * States where the user is actively engaged with reading content
+     * @param {string} state
+     * @returns {boolean}
+     */
+    _isReadingState(state) {
+        return ['Normal', 'Recovering', 'Struggling'].includes(state);
     }
 
     /**
@@ -63,6 +87,15 @@ class AttentionAnalytics {
      */
     recordGazeSample(gazeData, state, attentionScore) {
         const timestamp = Date.now();
+
+        // Accumulate reading time between gaze samples
+        if (this._lastSampleTime) {
+            const deltaMs = timestamp - this._lastSampleTime;
+            if (deltaMs > 0 && deltaMs < 5000 && this._isReadingState(state)) {
+                this.totalReadingTime += deltaMs;
+            }
+        }
+        this._lastSampleTime = timestamp;
         
         // Track gaze path
         this.gazePath.push({
@@ -84,12 +117,27 @@ class AttentionAnalytics {
             score: attentionScore,
             state
         });
+        if (this.attentionSamples.length > this._maxAttentionSamples) {
+            this.attentionSamples = this.attentionSamples.slice(-Math.floor(this._maxAttentionSamples * 0.6));
+        }
         
         // Track block dwell time
         if (gazeData.blockId) {
             if (!this.blockEntryTime[gazeData.blockId]) {
                 this.blockEntryTime[gazeData.blockId] = timestamp;
             }
+        }
+
+        if (gazeData.blockIndex !== null && gazeData.blockIndex !== undefined && gazeData.blockIndex >= 0) {
+            if (this._lastGazeBlockIndex === gazeData.blockIndex && this._lastGazeSampleTime) {
+                const delta = timestamp - this._lastGazeSampleTime;
+                if (delta > 0 && delta < 2500 && this._isReadingState(state)) {
+                    this.blockDwellTimes[gazeData.blockIndex] =
+                        (this.blockDwellTimes[gazeData.blockIndex] || 0) + delta;
+                }
+            }
+            this._lastGazeBlockIndex = gazeData.blockIndex;
+            this._lastGazeSampleTime = timestamp;
         }
         
         // Detect regressions (going back to previous blocks)
@@ -100,8 +148,8 @@ class AttentionAnalytics {
             this.lastBlockIndex = gazeData.blockIndex;
         }
         
-        // Track reading speed
-        if (state === 'reading' && gazeData.blockIndex !== undefined && gazeData.blockIndex >= 0) {
+        // Track reading speed (state machine uses 'Normal', not 'reading')
+        if (this._isReadingState(state) && gazeData.blockIndex !== undefined && gazeData.blockIndex >= 0) {
             if (this.currentBlockIndex !== gazeData.blockIndex) {
                 if (this.currentBlockStartTime && this.currentBlockIndex >= 0) {
                     const dwellTime = timestamp - this.currentBlockStartTime;
@@ -109,6 +157,9 @@ class AttentionAnalytics {
                     const wpm = (wc / dwellTime) * 60000;
                     if (wpm > 0 && wpm < 1000) {
                         this.readingSpeedSamples.push(wpm);
+                        if (this.readingSpeedSamples.length > this._maxReadingSpeedSamples) {
+                            this.readingSpeedSamples = this.readingSpeedSamples.slice(-Math.floor(this._maxReadingSpeedSamples * 0.6));
+                        }
                     }
                 }
                 this.currentBlockIndex = gazeData.blockIndex;
@@ -229,6 +280,7 @@ class AttentionAnalytics {
      * @returns {Object} { message, type, severity }
      */
     generateInsight() {
+        const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
         const attentionScore = this.getAttentionScore();
         const readingSpeed = this.getReadingSpeed();
         const focusRatio = this.getFocusRatio();
@@ -237,7 +289,7 @@ class AttentionAnalytics {
         // Low attention
         if (attentionScore < 30) {
             return {
-                message: "Your attention seems to be drifting. How about taking a short break?",
+                message: t('insight.break'),
                 type: 'break_suggestion',
                 severity: 'high',
                 icon: '🧠'
@@ -247,7 +299,7 @@ class AttentionAnalytics {
         // High regression (re-reading too much)
         if (regressionRate > 5) {
             return {
-                message: "You're re-reading some sections. Slowing down a bit might help comprehension.",
+                message: t('insight.paceSlow'),
                 type: 'pace_suggestion',
                 severity: 'medium',
                 icon: '📖'
@@ -257,7 +309,7 @@ class AttentionAnalytics {
         // Good progress encouragement
         if (focusRatio > 0.7 && attentionScore > 70) {
             return {
-                message: "Great focus! You're reading consistently well.",
+                message: t('insight.encourage'),
                 type: 'encouragement',
                 severity: 'low',
                 icon: '🌟'
@@ -267,7 +319,7 @@ class AttentionAnalytics {
         // Reading speed check
         if (readingSpeed > 0 && readingSpeed < 100) {
             return {
-                message: "You're reading at a leisurely pace. That's perfectly fine for comprehension!",
+                message: t('insight.paceInfo'),
                 type: 'pace_info',
                 severity: 'low',
                 icon: '🐢'
@@ -276,7 +328,7 @@ class AttentionAnalytics {
         
         if (readingSpeed > 400) {
             return {
-                message: "You're reading quite fast. Make sure you're absorbing the material!",
+                message: t('insight.paceFast'),
                 type: 'pace_warning',
                 severity: 'low',
                 icon: '⚡'
@@ -342,6 +394,113 @@ class AttentionAnalytics {
     }
 
     /**
+     * Record cognitive state transitions for recovery analytics.
+     */
+    recordStateTransition(previousState, currentState) {
+        if (!currentState || !currentState.name) return;
+
+        const now = Date.now();
+        const durationMs = now - this._lastStateChangeTime;
+
+        if (this._lastStateName) {
+            this.stateTimeline.push({
+                state: this._lastStateName,
+                durationMs,
+                timestamp: this._lastStateChangeTime
+            });
+            if (this.stateTimeline.length > 200) {
+                this.stateTimeline = this.stateTimeline.slice(-120);
+            }
+        }
+
+        const prevName = previousState && previousState.name ? previousState.name : this._lastStateName;
+        const currName = currentState.name;
+        const distracted = prevName === 'Distracted' || prevName === 'OffScreen';
+        const recovering = currName === 'Recovering' || currName === 'Normal';
+
+        if (distracted && this._pendingDistractionStart) {
+            const distractionMs = now - this._pendingDistractionStart;
+            this.recoveryEpisodes.push({
+                distractionMs,
+                recoveryMs: durationMs,
+                endedAt: now
+            });
+            this._pendingDistractionStart = null;
+        }
+
+        if (currName === 'Distracted' || currName === 'OffScreen') {
+            if (!this._pendingDistractionStart) {
+                this._pendingDistractionStart = now;
+            }
+        }
+
+        this._lastStateName = currName;
+        this._lastStateChangeTime = now;
+    }
+
+    /**
+     * Record when a comprehension assist card was shown.
+     */
+    recordComprehensionAssist(blockIndex) {
+        this.comprehensionAssists.push({
+            blockIndex,
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Average recovery time after distraction (seconds).
+     */
+    getAverageRecoverySeconds() {
+        if (!this.recoveryEpisodes.length) return 0;
+        const total = this.recoveryEpisodes.reduce((sum, ep) => sum + (ep.recoveryMs || 0), 0);
+        return Math.round((total / this.recoveryEpisodes.length) / 100) / 10;
+    }
+
+    /**
+     * Paragraph-level attention heatmap from dwell times.
+     */
+    getBlockHeatmap(totalBlocks = 0) {
+        const rows = [];
+        for (let i = 0; i < totalBlocks; i++) {
+            rows.push({
+                blockIndex: i,
+                displayIndex: i + 1,
+                dwellMs: this.blockDwellTimes[i] || 0
+            });
+        }
+        return rows;
+    }
+
+    /**
+     * Full session report for visualization / experiment export.
+     */
+    generateSessionReport(readingView) {
+        const summary = this.getSessionSummary();
+        const totalBlocks = readingView && readingView.blockElements
+            ? readingView.blockElements.length
+            : Object.keys(this.blockDwellTimes).length;
+
+        return {
+            generatedAt: new Date().toISOString(),
+            durationMin: Math.round(summary.duration * 10) / 10,
+            attentionScore: summary.attentionScore,
+            readingSpeed: summary.readingSpeed,
+            focusRatio: summary.focusRatio,
+            distractionCount: summary.distractionCount,
+            avgRecoverySec: this.getAverageRecoverySeconds(),
+            blocksRead: summary.blocksRead,
+            regressionRate: summary.regressionRate,
+            blockHeatmap: this.getBlockHeatmap(totalBlocks),
+            stateTimeline: this.stateTimeline,
+            comprehensionAssists: this.comprehensionAssists.length,
+            distractionEpisodes: this.distractionEpisodes,
+            recoveryEpisodes: this.recoveryEpisodes,
+            insight: summary.insight
+        };
+    }
+
+    /**
      * Get a summary of the current session
      * @returns {Object} Session summary
      */
@@ -381,6 +540,22 @@ class AttentionAnalytics {
         this.lastBlockIndex = -1;
         this.blockDwellTimes = {};
         this.blockEntryTime = {};
+        this._lastGazeBlockIndex = -1;
+        this._lastGazeSampleTime = null;
+        this.recoveryEpisodes = [];
+        this._pendingDistractionStart = null;
+        this.stateTimeline = [];
+        this._lastStateName = 'Normal';
+        this._lastStateChangeTime = Date.now();
+        this.comprehensionAssists = [];
+        this._lastSampleTime = Date.now();
+    }
+
+    /**
+     * Alias for reset() — used by index.html on file import
+     */
+    resetSession() {
+        this.reset();
     }
 
     /**

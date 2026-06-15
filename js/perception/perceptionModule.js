@@ -26,6 +26,7 @@ class PerceptionModule {
         // Feature cache for last computed features
         this._lastFeatures = null;
         this._lastUpdateTime = 0;
+        this._sessionStartTime = performance.now();
         
         // Mouse event listeners
         this._setupMouseListeners();
@@ -53,13 +54,24 @@ class PerceptionModule {
      * Set up scroll event listeners
      */
     _setupScrollListeners() {
+        const onScroll = (scrollY, deltaY) => {
+            this.scrollAnalyzer.update(scrollY, deltaY || 0);
+        };
+
         window.addEventListener('scroll', () => {
-            this.scrollAnalyzer.update(window.scrollY, 0);
+            onScroll(window.scrollY, 0);
         });
         
         window.addEventListener('wheel', (e) => {
-            this.scrollAnalyzer.update(window.scrollY, e.deltaY);
+            onScroll(window.scrollY, e.deltaY);
         });
+
+        const readingEl = document.getElementById('ff-reading-content');
+        if (readingEl) {
+            readingEl.addEventListener('scroll', () => {
+                onScroll(readingEl.scrollTop, 0);
+            }, { passive: true });
+        }
     }
 
     /**
@@ -102,32 +114,66 @@ class PerceptionModule {
      * @returns {Object} Features for state machine
      */
     getFeatures() {
-        const faceFeatures = this.faceDetection.isFacePresent() ? {
-            facePresent: this.faceDetection.isFacePresent(),
-            faceAbsentDuration: this.faceDetection.getFaceAbsentDuration(),
-            faceConfidence: this.faceDetection.faceConfidence
-        } : {
-            facePresent: false,
-            faceAbsentDuration: this.faceDetection.getFaceAbsentDuration(),
+        const now = performance.now();
+        const trackingMode = (this.config && this.config.trackingMode) || 'mouse';
+        const faceTracking = !!(this.config && this.config.useWebGazer && trackingMode === 'gaze');
+
+        const mt = this.mouseTracker;
+        const liveMouseIdle = mt.lastMoveTime > 0
+            ? now - mt.lastMoveTime
+            : now - this._sessionStartTime;
+        const liveIsMoving = liveMouseIdle < 120;
+
+        // Keep gaze-region dwell growing between gaze pipeline events (mouse mode)
+        if (mt.lastMoveTime > 0) {
+            this.gazeRegion.update(mt.mouseX, mt.mouseY, 0.3);
+        }
+
+        const sa = this.scrollAnalyzer;
+        const liveScrollIdle = sa.lastScrollTime > 0 ? now - sa.lastScrollTime : sa.scrollIdleDuration;
+        const liveIsScrolling = liveScrollIdle < 200;
+        const liveIsPaused = liveScrollIdle > sa._pauseThreshold;
+        const livePauseDuration = liveIsPaused
+            ? (sa._pauseStartTime ? now - sa._pauseStartTime : liveScrollIdle)
+            : 0;
+
+        let facePresent = this.faceDetection.isFacePresent();
+        let faceAbsentDuration = this.faceDetection.getFaceAbsentDuration();
+        if (!faceTracking) {
+            facePresent = false;
+            faceAbsentDuration = Math.max(faceAbsentDuration, liveMouseIdle);
+        }
+
+        const faceFeatures = {
+            facePresent,
+            faceAbsentDuration,
             faceConfidence: this.faceDetection.faceConfidence
         };
         
         const poseFeatures = this.headPose.getFeatures();
         const gazeFeatures = this.gazeRegion.getFeatures();
-        const mouseFeatures = this.mouseTracker.getFeatures();
-        const scrollFeatures = this.scrollAnalyzer.getFeatures();
+        const mouseFeatures = {
+            ...this.mouseTracker.getFeatures(),
+            idleDuration: liveMouseIdle,
+            isMoving: liveIsMoving,
+            isIdle: liveMouseIdle > mt._idleThreshold
+        };
+        const scrollFeatures = {
+            ...this.scrollAnalyzer.getFeatures(),
+            isScrolling: liveIsScrolling,
+            isPaused: liveIsPaused,
+            pauseDuration: livePauseDuration,
+            scrollIdleDuration: liveScrollIdle
+        };
         const heatmapFeatures = this.attentionHeatmap.getFeatures();
         
-        // Compute interaction activity (any user input recently)
-        const now = performance.now();
-        const interactionActive = this.mouseTracker.isMoving || 
-                                  this.scrollAnalyzer.isScrolling ||
-                                  this.mouseTracker.idleDuration < 3000;
+        const interactionActive = liveIsMoving ||
+                                  liveIsScrolling ||
+                                  liveMouseIdle < 3000;
         
-        // Compute dwell time on current content area
         const dwellTime = gazeFeatures.dwellTime > 0 ? 
                           gazeFeatures.dwellTime : 
-                          (this.scrollAnalyzer.isPaused ? this.scrollAnalyzer.pauseDuration : 0);
+                          (liveIsPaused ? livePauseDuration : 0);
         
         this._lastFeatures = {
             ...faceFeatures,
@@ -138,7 +184,9 @@ class PerceptionModule {
             ...heatmapFeatures,
             interactionActive,
             dwellTime,
-            timestamp: this._lastUpdateTime
+            trackingMode,
+            faceTracking,
+            timestamp: now
         };
         
         return this._lastFeatures;

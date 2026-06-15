@@ -134,13 +134,14 @@ class FocusMode {
      * @returns {string} HTML string
      */
     static createToggleHTML() {
+        const t = (key) => (typeof I18n !== 'undefined' ? I18n.t(key) : key);
         return `
-            <div class="ff-focus-toggle">
-                <button class="ff-focus-toggle-btn active" data-focus-mode="standard" title="Standard Mode">
-                    <span>📖</span> Standard
+            <div class="ff-segment-group ff-focus-toggle">
+                <button type="button" class="ff-segment-btn ff-focus-toggle-btn active" data-focus-mode="standard" title="${t('focus.standardTitle')}">
+                    <span class="ff-segment-icon">📖</span><span data-i18n="focus.standard">${t('focus.standard')}</span>
                 </button>
-                <button class="ff-focus-toggle-btn" data-focus-mode="deep" title="Deep Focus - Hide sidebar">
-                    <span>🔍</span> Deep
+                <button type="button" class="ff-segment-btn ff-focus-toggle-btn" data-focus-mode="deep" title="${t('focus.deepTitle')}">
+                    <span class="ff-segment-icon">🔍</span><span data-i18n="focus.deep">${t('focus.deep')}</span>
                 </button>
             </div>
         `;

@@ -44,6 +44,8 @@ class CalibrationManager {
         this._progressEl = null;
         this._statusEl = null;
         this._instructionEl = null;
+        this._titleEl = null;
+        this._skipBtn = null;
         
         // Collection timer
         this._collectInterval = null;
@@ -134,7 +136,7 @@ class CalibrationManager {
             z-index: 10;
         `;
         instructionPanel.innerHTML = `
-            <div style="font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 6px;">
+            <div id="ff-calibration-title" style="font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 6px;">
                 WebGazer Calibration
             </div>
             <div id="ff-calibration-instruction" style="font-size: 14px; color: #475569; max-width: 560px;">
@@ -143,6 +145,7 @@ class CalibrationManager {
         `;
         this._overlay.appendChild(instructionPanel);
         this._instructionEl = instructionPanel.querySelector('#ff-calibration-instruction');
+        this._titleEl = instructionPanel.querySelector('#ff-calibration-title');
         
         // Status text at bottom
         const statusPanel = document.createElement('div');
@@ -173,6 +176,7 @@ class CalibrationManager {
         // Skip button
         const skipBtn = document.createElement('button');
         skipBtn.textContent = 'Skip calibration';
+        this._skipBtn = skipBtn;
         skipBtn.style.cssText = `
             position: absolute;
             bottom: 22px;
@@ -256,6 +260,33 @@ class CalibrationManager {
         
         // Force reflow for animation
         this._overlay.offsetHeight;
+        this._applyI18n();
+    }
+
+    _t(key, params) {
+        if (typeof I18n !== 'undefined') return I18n.t(key, params);
+        const fallbacks = {
+            'calibration.title': 'WebGazer Calibration',
+            'calibration.instruction': 'Look at the highlighted point, then click or press Space.',
+            'calibration.waiting': 'Waiting...',
+            'calibration.skip': 'Skip calibration'
+        };
+        let text = fallbacks[key] || key;
+        if (params) {
+            for (const [name, value] of Object.entries(params)) {
+                text = text.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value));
+            }
+        }
+        return text;
+    }
+
+    _applyI18n() {
+        if (this._titleEl) this._titleEl.textContent = this._t('calibration.title');
+        if (this._instructionEl) this._instructionEl.textContent = this._t('calibration.instruction');
+        if (this._skipBtn) this._skipBtn.textContent = this._t('calibration.skip');
+        if (this._statusEl && this._statusEl.textContent === 'Waiting...') {
+            this._statusEl.textContent = this._t('calibration.waiting');
+        }
     }
 
     /**
@@ -323,10 +354,13 @@ class CalibrationManager {
         
         // Update progress text
         if (this._progressEl) {
-            this._progressEl.textContent = `Point ${index + 1} / ${this.points.length}`;
+            this._progressEl.textContent = this._t('calibration.point', {
+                current: index + 1,
+                total: this.points.length
+            });
         }
         if (this._statusEl) {
-            this._statusEl.textContent = 'Look at this point, then click or press Space.';
+            this._statusEl.textContent = this._t('calibration.instruction');
         }
         
         // Update progress bar

@@ -1,0 +1,534 @@
+/**
+ * FocusFlow - Internationalization (i18n)
+ * Supports English / Chinese UI switching.
+ */
+
+const I18n = {
+    lang: 'en',
+    translations: {
+        en: {
+            'app.title': 'FocusFlow — Adaptive Attention Management System',
+            'app.tagline': 'Adaptive Attention Reading System',
+            'lang.en': 'EN',
+            'lang.zh': '中文',
+            'lang.current': 'English',
+
+            'btn.import': 'Import Text',
+            'btn.reset': 'Reset',
+            'btn.theme.dark': 'Dark',
+            'btn.theme.light': 'Light',
+            'btn.clear': 'Clear',
+            'btn.set': 'Set',
+            'btn.cancel': 'Cancel',
+            'btn.saveGoal': 'Save Goal',
+            'btn.enableCamera': 'Enable Camera',
+            'btn.startCamera': 'Start Camera',
+            'btn.paragraphDebug': '¶ Debug',
+            'btn.paragraphDebugOn': '¶ Debug ON',
+            'btn.sessionReport': 'Session Report',
+
+            'comprehension.title': 'Paragraph Overview',
+            'comprehension.meta': 'Paragraph {index} · dwelled {seconds}s',
+            'comprehension.hint': 'Close anytime — hover the paragraph and tap the button to reopen.',
+            'comprehension.loading': 'Generating overview with AI…',
+            'comprehension.generate': 'Summarize',
+            'comprehension.reopen': 'Show overview',
+
+            'report.title': 'Reading Session Report',
+            'report.duration': 'Duration',
+            'report.attention': 'Attention',
+            'report.distractions': 'Distractions',
+            'report.recovery': 'Avg Recovery',
+            'report.heatmapTitle': 'Paragraph Attention Heatmap',
+            'report.heatmapHint': 'Bar length = time spent on each paragraph (dwell).',
+            'report.timelineTitle': 'Cognitive State Timeline',
+            'report.assistTitle': 'Comprehension Assists',
+            'report.assistCount': 'Summary cards shown: {count}',
+            'report.paragraphLabel': 'P{index}',
+            'report.noData': 'Not enough data yet — read a bit longer.',
+            'report.export': 'Export JSON',
+            'report.close': 'Close',
+
+            'reading.area': 'Reading Area',
+            'reading.loading': 'Loading reading content...',
+            'reading.keywords': 'Paragraph Keywords',
+            'reading.keyTerms': 'Key Terms',
+            'reading.phrase': 'phrase',
+
+            'timer.title': 'Reading timer',
+            'timer.start': 'Start or pause',
+            'timer.mode': 'Toggle count-up / countdown',
+            'timer.modeUpTitle': 'Count-up mode — click to switch to countdown',
+            'timer.modeDownTitle': 'Countdown {min} min — click to switch to count-up',
+            'timer.presetHint': 'Countdown {min} min — click to change duration',
+            'timer.countUpHint': 'Elapsed reading time',
+            'timer.reset': 'Reset',
+            'timer.timeUp.title': 'Time is up!',
+            'timer.timeUp.sub': 'This reading session has ended. Take a short break.',
+
+            'gaze.toggle': 'Show or hide the gaze position indicator on screen',
+
+            'camera.title': 'Eye Tracking',
+            'camera.kicker': 'WebGazer face mesh preview',
+            'camera.waiting': 'Waiting for permission',
+            'camera.notConnected': 'Not connected',
+            'camera.previewBadge': '4:3 Preview',
+            'camera.emptyTitle': 'Camera preview',
+            'camera.emptySub': 'Switch to Eye mode in the header to show the WebGazer face mesh here.',
+            'camera.inputSource': 'Input Source',
+            'camera.trackingStatus': 'Tracking Status',
+            'camera.visualFeedback': 'Visual Feedback',
+            'camera.cursorMeaning': 'Cursor Meaning',
+            'camera.greenMesh': 'Green Mesh',
+            'camera.realGaze': 'Real Gaze',
+            'camera.gate.title': 'Enable eye tracking',
+            'camera.gate.prompt': 'FocusFlow needs camera access for WebGazer eye tracking. Click the button below — your browser will ask for permission.',
+            'camera.gate.denied': 'Camera permission was blocked. Allow camera access in your browser settings, then click retry.',
+            'camera.gate.file': 'Open this page through a local server instead of file://. Run npm start, then open http://127.0.0.1:8080.',
+            'camera.gate.unsupported': 'This browser does not support the camera API. Use Chrome, Edge, or Firefox.',
+            'camera.gate.enable': 'Enable Camera & Calibrate',
+            'camera.gate.retry': 'Retry Camera',
+            'camera.gate.working': 'Starting camera...',
+            'camera.suggest.allowAddressBar': 'Click the lock or camera icon in the address bar and allow camera access',
+            'camera.suggest.resetPermission': 'If you denied permission before, reset it in browser site settings',
+            'camera.suggest.retryButton': 'Click "Enable Camera" or "Retry Camera" after allowing permission',
+            'camera.suggest.useLocalhost': 'Open http://127.0.0.1:8080 or http://localhost:8080 (not file://)',
+            'camera.suggest.useChromeEdge': 'Use the latest Chrome, Edge, or Firefox for best compatibility',
+            'camera.suggest.closeOtherApps': 'Close other apps that may be using the camera (Zoom, Teams, etc.)',
+            'camera.suggest.connectCamera': 'Connect a webcam and make sure it is not disabled in system settings',
+
+            'state.title': 'State',
+            'state.focusedReading': 'Focused reading',
+            'state.noIntervention': 'No intervention',
+            'state.waitingChanges': 'Waiting for state changes...',
+            'state.Normal': 'Normal',
+            'state.Distracted': 'Distracted',
+            'state.Struggling': 'Struggling',
+            'state.Recovering': 'Recovering',
+            'state.OffScreen': 'Off Screen',
+            'state.desc.Normal': 'Focused and reading',
+            'state.desc.Distracted': 'Attention drifted away',
+            'state.desc.Struggling': 'Having difficulty with content',
+            'state.desc.Recovering': 'Returning to focus',
+            'state.desc.OffScreen': 'Away from screen',
+
+            'metrics.title': 'Attention Metrics',
+            'metrics.attention': 'Attention',
+            'metrics.speed': 'Speed',
+            'metrics.focusRatio': 'Focus Ratio',
+            'metrics.regression': 'Regression',
+            'metrics.duration': 'Duration',
+            'metrics.distractions': 'Distractions',
+            'metrics.wpm': 'wpm',
+            'metrics.min': 'min',
+            'metrics.perMin': '/min',
+
+            'goal.title': 'Reading Goal',
+            'goal.targetWords': 'Target Words',
+            'goal.timeLimit': 'Time Limit',
+            'goal.progress': 'Progress',
+            'goal.empty': 'Click Set to define a reading goal',
+            'goal.dialogTitle': 'Set Reading Goal',
+            'goal.wordsLabel': 'Target words (blank = unlimited)',
+            'goal.timeLabel': 'Time limit in minutes (blank = unlimited)',
+            'goal.hint': 'After setting a goal, progress is tracked live. A summary report is generated at the end.',
+            'goal.unlimited': 'Unlimited',
+
+            'features.title': 'Perception Features',
+            'features.face': 'Face',
+            'features.head': 'Head',
+            'features.gaze': 'Gaze',
+            'features.mouse': 'Mouse',
+            'features.scroll': 'Scroll',
+            'features.dwell': 'Dwell',
+            'features.dispersion': 'Dispersion',
+            'features.interaction': 'Interaction',
+
+            'chart.stateProb': 'State Probability Distribution',
+            'chart.timeline': 'State Timeline',
+            'chart.waiting': 'Waiting for data...',
+            'log.title': 'Event Log',
+            'log.ready': 'System ready, waiting to start...',
+
+            'focus.standard': 'Standard',
+            'focus.deep': 'Deep Focus',
+            'focus.standardTitle': 'Standard Mode',
+            'focus.deepTitle': 'Deep Focus — hide sidebar',
+
+            'tracking.mouse': 'Mouse',
+            'tracking.gaze': 'Eye',
+            'tracking.mouseTitle': 'Mouse tracking (no camera)',
+            'tracking.gazeTitle': 'Eye tracking (camera required)',
+
+            'welcome.title': 'Welcome to FocusFlow!',
+            'welcome.sub': 'Mouse tracking is active by default. Use the header bar to switch focus mode, tracking input, or language.',
+
+            'calibration.title': 'WebGazer Calibration',
+            'calibration.instruction': 'Look at the highlighted point, then click or press Space.',
+            'calibration.point': 'Point {current} / {total}',
+            'calibration.waiting': 'Waiting...',
+            'calibration.skip': 'Skip calibration',
+            'calibration.complete.title': 'Calibration complete!',
+            'calibration.complete.sub': 'Gaze tracking calibrated with {accuracy}px avg. accuracy.',
+            'calibration.skipped.title': 'Using mouse tracking',
+            'calibration.skipped.sub': 'Calibration was skipped. Gaze will follow your mouse cursor.',
+
+            'prompt.stillThere.title': 'Still there?',
+            'prompt.stillThere.sub': "It looks like you stepped away. Come back when you're ready.",
+            'prompt.reminder1.text': "Come back when you're ready.",
+            'prompt.reminder1.sub': 'Your reading is waiting.',
+            'prompt.reminder2.text': 'One sentence at a time.',
+            'prompt.reminder2.sub': 'No need to catch up all at once.',
+            'prompt.reminder3.text': "It's okay to take breaks.",
+            'prompt.reminder3.sub': 'Just come back when you can.',
+            'prompt.reminder4.text': 'You were making great progress.',
+            'prompt.reminder4.sub': 'Pick up where you left off.',
+            'prompt.wakeup.title': 'Time to refocus!',
+            'prompt.wakeup.sub': "You've been away for a while. Pick up where you left off.",
+            'prompt.struggling.title': 'Take your time with this section.',
+            'prompt.struggling.sub': 'No rush — understanding matters more than speed.',
+
+            'api.error.title': '{api} needs attention',
+            'api.error.sub': '{summary}. Check camera permission and retry.',
+
+            'debug.paragraph.title': 'Paragraph Boundaries',
+            'debug.paragraph.toggleTitle': 'Show or hide paragraph split boundaries',
+            'debug.paragraph.track': 'Tracked paragraph (gaze/NLP)',
+            'debug.paragraph.heading': 'Section heading (not tracked)',
+            'debug.paragraph.titleBlock': 'Title / subtitle (not tracked)',
+            'debug.paragraph.stats': '{total} blocks · {tracked} tracked · {headings} headings · {titles} title blocks',
+            'debug.paragraph.badgeTrack': 'P{index} · {chars}c · {words}w',
+            'debug.paragraph.badgeHeading': 'H · {chars}c',
+            'debug.paragraph.typeTitle': 'TITLE',
+            'debug.paragraph.typeSubtitle': 'SUBTITLE',
+
+            'insight.break': 'Your attention seems to be drifting. How about taking a short break?',
+            'insight.paceSlow': "You're re-reading some sections. Slowing down a bit might help comprehension.",
+            'insight.encourage': "Great focus! You're reading consistently well.",
+            'insight.paceInfo': "You're reading at a leisurely pace. That's perfectly fine for comprehension!",
+            'insight.paceFast': "You're reading quite fast. Make sure you're absorbing the material!",
+
+            'import.none': 'No readable text found. Please import .txt, .md, .docx, or similar formats.',
+            'import.success': 'Imported {count} files ({size} KB)',
+            'import.failed': '{count} files could not be parsed: {files}',
+
+            'strategy.none': 'No intervention',
+            'strategy.noneDesc': 'No action needed',
+            'strategy.waiting': 'Waiting for state changes...',
+            'escalation.low': 'low',
+            'escalation.medium': 'medium',
+            'escalation.high': 'high'
+        },
+        zh: {
+            'app.title': 'FocusFlow — 自适应注意力管理系统',
+            'app.tagline': '自适应注意力阅读系统',
+            'lang.en': 'EN',
+            'lang.zh': '中文',
+            'lang.current': '中文',
+
+            'btn.import': '导入文件',
+            'btn.reset': '重置',
+            'btn.theme.dark': '深色',
+            'btn.theme.light': '浅色',
+            'btn.clear': '清空',
+            'btn.set': '设置',
+            'btn.cancel': '取消',
+            'btn.saveGoal': '保存目标',
+            'btn.enableCamera': '启用摄像头',
+            'btn.startCamera': '启动摄像头',
+            'btn.paragraphDebug': '¶ 分段调试',
+            'btn.paragraphDebugOn': '¶ 分段调试 ON',
+            'btn.sessionReport': '阅读报告',
+
+            'comprehension.title': '📋 段落理解辅助',
+            'comprehension.meta': '第 {index} 段 · 停留 {seconds} 秒',
+            'comprehension.hint': '可随时关闭；鼠标悬停段落，点击按钮可再次查看。',
+            'comprehension.loading': '正在用 AI 生成理解辅助…',
+            'comprehension.generate': '生成概述',
+            'comprehension.reopen': '再次查看',
+
+            'report.title': '阅读会话报告',
+            'report.duration': '阅读时长',
+            'report.attention': '注意力',
+            'report.distractions': '分心次数',
+            'report.recovery': '平均恢复',
+            'report.heatmapTitle': '段落注意力热力图',
+            'report.heatmapHint': '柱长 = 在各段落停留的时间（dwell）。',
+            'report.timelineTitle': '认知状态时间线',
+            'report.assistTitle': '理解辅助',
+            'report.assistCount': '已显示摘要卡片：{count} 次',
+            'report.paragraphLabel': '第{index}段',
+            'report.noData': '数据尚不足，请继续阅读一段时间。',
+            'report.export': '导出 JSON',
+            'report.close': '关闭',
+
+            'reading.area': '阅读区',
+            'reading.loading': '正在加载阅读内容...',
+            'reading.keywords': '段落关键词',
+            'reading.keyTerms': '关键术语',
+            'reading.phrase': '短语',
+
+            'timer.title': '阅读计时器',
+            'timer.start': '开始 / 暂停',
+            'timer.mode': '切换正计时 / 倒计时',
+            'timer.modeUpTitle': '正计时模式 — 点击切换为倒计时',
+            'timer.modeDownTitle': '倒计时 {min} 分钟 — 点击切换为正计时',
+            'timer.presetHint': '倒计时 {min} 分钟 — 点击切换时长',
+            'timer.countUpHint': '已阅读时长',
+            'timer.reset': '重置',
+            'timer.timeUp.title': '时间到！',
+            'timer.timeUp.sub': '本次阅读已结束，休息一下再继续吧。',
+
+            'gaze.toggle': '显示 / 隐藏屏幕上的视线位置指示',
+
+            'camera.title': '眼动追踪',
+            'camera.kicker': 'WebGazer 人脸网格预览',
+            'camera.waiting': '等待授权',
+            'camera.notConnected': '未连接',
+            'camera.previewBadge': '4:3 预览',
+            'camera.emptyTitle': '摄像头预览',
+            'camera.emptySub': '在顶部模式栏切换到「眼动」后，此处将显示 WebGazer 人脸网格。',
+            'camera.inputSource': '输入源',
+            'camera.trackingStatus': '追踪状态',
+            'camera.visualFeedback': '视觉反馈',
+            'camera.cursorMeaning': '光标含义',
+            'camera.greenMesh': '绿色网格',
+            'camera.realGaze': '真实眼动',
+            'camera.gate.title': '启用眼动追踪',
+            'camera.gate.prompt': 'FocusFlow 需要摄像头权限以进行 WebGazer 眼动追踪。点击下方按钮，浏览器会弹出授权请求。',
+            'camera.gate.denied': '摄像头权限已被阻止。请在浏览器设置中允许摄像头，然后点击重试。',
+            'camera.gate.file': '请通过本地服务器打开页面，不要直接用 file://。运行 npm start 后访问 http://127.0.0.1:8080。',
+            'camera.gate.unsupported': '当前浏览器不支持摄像头 API，请使用 Chrome、Edge 或 Firefox。',
+            'camera.gate.enable': '启用摄像头并校准',
+            'camera.gate.retry': '重试摄像头',
+            'camera.gate.working': '正在启动摄像头...',
+            'camera.suggest.allowAddressBar': '点击地址栏的锁或摄像头图标，允许摄像头访问',
+            'camera.suggest.resetPermission': '如果之前拒绝过权限，请在浏览器网站设置中重置摄像头权限',
+            'camera.suggest.retryButton': '允许权限后，点击「启用摄像头」或「重试摄像头」',
+            'camera.suggest.useLocalhost': '请通过 http://127.0.0.1:8080 或 http://localhost:8080 访问（不要用 file://）',
+            'camera.suggest.useChromeEdge': '建议使用最新版 Chrome、Edge 或 Firefox 以获得最佳兼容性',
+            'camera.suggest.closeOtherApps': '关闭可能占用摄像头的其他应用（如 Zoom、Teams 等）',
+            'camera.suggest.connectCamera': '请连接摄像头并确认系统设置中未禁用',
+
+            'state.title': '认知状态',
+            'state.focusedReading': '专注阅读中',
+            'state.noIntervention': '无需干预',
+            'state.waitingChanges': '等待状态变化...',
+            'state.Normal': '正常',
+            'state.Distracted': '分心',
+            'state.Struggling': '困难',
+            'state.Recovering': '恢复中',
+            'state.OffScreen': '离屏',
+            'state.desc.Normal': '专注阅读中',
+            'state.desc.Distracted': '注意力已偏离',
+            'state.desc.Struggling': '阅读遇到困难',
+            'state.desc.Recovering': '正在恢复专注',
+            'state.desc.OffScreen': '已离开屏幕',
+
+            'metrics.title': '注意力指标',
+            'metrics.attention': '注意力',
+            'metrics.speed': '阅读速度',
+            'metrics.focusRatio': '专注比',
+            'metrics.regression': '回读率',
+            'metrics.duration': '时长',
+            'metrics.distractions': '分心次数',
+            'metrics.wpm': '字/分',
+            'metrics.min': '分钟',
+            'metrics.perMin': '/分钟',
+
+            'goal.title': '阅读目标',
+            'goal.targetWords': '目标字数',
+            'goal.timeLimit': '时间限制',
+            'goal.progress': '进度',
+            'goal.empty': '点击「设置」来定义阅读目标',
+            'goal.dialogTitle': '设置阅读目标',
+            'goal.wordsLabel': '目标字数（留空表示不限）',
+            'goal.timeLabel': '时间限制（分钟，留空表示不限）',
+            'goal.hint': '设置目标后，系统会实时追踪进度，并在结束时生成摘要报告。',
+            'goal.unlimited': '不限',
+
+            'features.title': '感知特征',
+            'features.face': '人脸',
+            'features.head': '头部',
+            'features.gaze': '眼动',
+            'features.mouse': '鼠标',
+            'features.scroll': '滚动',
+            'features.dwell': '停留',
+            'features.dispersion': '离散度',
+            'features.interaction': '交互',
+
+            'chart.stateProb': '状态概率分布',
+            'chart.timeline': '状态时间线',
+            'chart.waiting': '等待数据中...',
+            'log.title': '事件日志',
+            'log.ready': '系统就绪，等待启动...',
+
+            'focus.standard': '标准',
+            'focus.deep': '深度专注',
+            'focus.standardTitle': '标准模式',
+            'focus.deepTitle': '深度专注 — 隐藏侧边栏',
+
+            'tracking.mouse': '鼠标',
+            'tracking.gaze': '眼动',
+            'tracking.mouseTitle': '鼠标追踪（无需摄像头）',
+            'tracking.gazeTitle': '眼动追踪（需开启摄像头）',
+
+            'welcome.title': '欢迎使用 FocusFlow！',
+            'welcome.sub': '默认使用鼠标追踪。顶部模式栏可切换专注模式、追踪方式与语言。',
+
+            'calibration.title': 'WebGazer 校准',
+            'calibration.instruction': '注视高亮圆点，然后点击或按空格键。',
+            'calibration.point': '校准点 {current} / {total}',
+            'calibration.waiting': '等待中...',
+            'calibration.skip': '跳过校准',
+            'calibration.complete.title': '校准完成！',
+            'calibration.complete.sub': '眼动追踪已校准，平均误差 {accuracy}px。',
+            'calibration.skipped.title': '使用鼠标追踪',
+            'calibration.skipped.sub': '已跳过校准，眼动将跟随鼠标光标。',
+
+            'prompt.stillThere.title': '还在吗？',
+            'prompt.stillThere.sub': '看起来你暂时走开了，准备好了就回来继续阅读吧。',
+            'prompt.reminder1.text': '准备好了就回来吧。',
+            'prompt.reminder1.sub': '你的阅读内容还在等你。',
+            'prompt.reminder2.text': '一次读一句就好。',
+            'prompt.reminder2.sub': '不必一次追上所有内容。',
+            'prompt.reminder3.text': '休息一下也没关系。',
+            'prompt.reminder3.sub': '方便的时候再回来就好。',
+            'prompt.reminder4.text': '你刚才读得很好。',
+            'prompt.reminder4.sub': '从上次停下的地方继续吧。',
+            'prompt.wakeup.title': '该重新专注了！',
+            'prompt.wakeup.sub': '你已经离开一段时间了，从上次停下的地方继续吧。',
+            'prompt.struggling.title': '这段内容可以慢慢读。',
+            'prompt.struggling.sub': '不用着急，理解比速度更重要。',
+
+            'api.error.title': '{api} 需要处理',
+            'api.error.sub': '{summary}。请检查摄像头权限后重试。',
+
+            'debug.paragraph.title': '段落边界调试',
+            'debug.paragraph.toggleTitle': '显示或隐藏段落划分边界',
+            'debug.paragraph.track': '追踪段落（眼动/NLP）',
+            'debug.paragraph.heading': '小节标题（不追踪）',
+            'debug.paragraph.titleBlock': '标题 / 副标题（不追踪）',
+            'debug.paragraph.stats': '共 {total} 块 · {tracked} 个追踪段 · {headings} 个标题 · {titles} 个标题块',
+            'debug.paragraph.badgeTrack': '段{index} · {chars}字 · {words}词',
+            'debug.paragraph.badgeHeading': '标题 · {chars}字',
+            'debug.paragraph.typeTitle': '主标题',
+            'debug.paragraph.typeSubtitle': '副标题',
+
+            'insight.break': '注意力似乎有些分散，要不要休息一下？',
+            'insight.paceSlow': '你在重复阅读某些段落，放慢一点可能更有助于理解。',
+            'insight.encourage': '专注状态很好！你正在稳定地阅读。',
+            'insight.paceInfo': '你读得比较从容，这对理解内容很有帮助！',
+            'insight.paceFast': '你读得很快，请确保真正吸收了内容！',
+
+            'import.none': '未找到可读文本。请导入 .txt、.md、.docx 等格式。',
+            'import.success': '已导入 {count} 个文件（{size} KB）',
+            'import.failed': '{count} 个文件无法解析：{files}',
+
+            'strategy.none': '无需干预',
+            'strategy.noneDesc': '当前无需采取行动',
+            'strategy.waiting': '等待状态变化...',
+            'escalation.low': '低',
+            'escalation.medium': '中',
+            'escalation.high': '高'
+        }
+    },
+
+    init() {
+        const saved = localStorage.getItem('focusflow_lang');
+        const browserZh = (navigator.language || '').toLowerCase().startsWith('zh');
+        this.setLang(saved || (browserZh ? 'zh' : 'en'), { silent: true });
+    },
+
+    t(key, params = {}) {
+        const dict = this.translations[this.lang] || this.translations.en;
+        let text = dict[key] ?? this.translations.en[key] ?? key;
+        for (const [name, value] of Object.entries(params)) {
+            text = text.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value));
+        }
+        return text;
+    },
+
+    setLang(lang, options = {}) {
+        if (!this.translations[lang]) return;
+        this.lang = lang;
+        localStorage.setItem('focusflow_lang', lang);
+        document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+        document.title = this.t('app.title');
+        this.applyDocument();
+        this.updateLangToggle();
+        if (!options.silent) {
+            document.dispatchEvent(new CustomEvent('focusflow-lang-change', { detail: { lang } }));
+        }
+    },
+
+    toggleLang() {
+        this.setLang(this.lang === 'zh' ? 'en' : 'zh');
+    },
+
+    createLangToggleHTML() {
+        return `
+            <div class="ff-lang-toggle ff-focus-toggle" id="ff-lang-toggle" role="group" aria-label="Language">
+                <button type="button" class="ff-lang-toggle-btn ff-focus-toggle-btn" data-lang="zh">${this.t('lang.zh')}</button>
+                <button type="button" class="ff-lang-toggle-btn ff-focus-toggle-btn" data-lang="en">${this.t('lang.en')}</button>
+            </div>
+        `;
+    },
+
+    bindLangToggle() {
+        const container = document.getElementById('ff-lang-toggle');
+        if (!container) return;
+
+        container.querySelectorAll('[data-lang]').forEach((btn) => {
+            btn.onclick = () => this.setLang(btn.dataset.lang);
+        });
+        this.updateLangToggle();
+    },
+
+    updateLangToggle() {
+        document.querySelectorAll('.ff-lang-toggle-btn, #ff-lang-toggle .ff-segment-btn').forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.lang === this.lang);
+        });
+    },
+
+    translateState(name) {
+        return this.t(`state.${name}`, {}) !== `state.${name}`
+            ? this.t(`state.${name}`)
+            : name;
+    },
+
+    translateStateDesc(name) {
+        const key = `state.desc.${name}`;
+        return this.t(key) !== key ? this.t(key) : this.t('state.focusedReading');
+    },
+
+    applyDocument() {
+        this.applyElement(document);
+    },
+
+    applyElement(root) {
+        if (!root || !root.querySelectorAll) return;
+
+        root.querySelectorAll('[data-i18n]').forEach((el) => {
+            el.textContent = this.t(el.getAttribute('data-i18n'));
+        });
+        root.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            el.title = this.t(el.getAttribute('data-i18n-title'));
+        });
+        root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+            el.placeholder = this.t(el.getAttribute('data-i18n-placeholder'));
+        });
+    }
+};
+
+window.setLanguage = function(lang) {
+    I18n.setLang(lang);
+};
+
+window.toggleLanguage = function() {
+    I18n.toggleLang();
+};
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = I18n;
+}

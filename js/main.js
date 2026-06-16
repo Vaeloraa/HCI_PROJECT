@@ -148,6 +148,7 @@ FocusFlow._smoothedGazeY = 0;
 FocusFlow._gazeSmoothFactor = 0.4;  // 0-1, higher = less smoothing
 FocusFlow._gazeSamples = [];
 FocusFlow._gazeSampleWindow = 5;     // Moving average window
+FocusFlow._gazeKalmanFilter = null;
 
 /**
  * Initialize all FocusFlow subsystems
@@ -586,7 +587,9 @@ FocusFlow.startWebGazer = async function(options) {
     if (!CameraAccess.isSupported()) {
         this._reportApiError(
             'WebGazer / Camera',
-            'Browser camera API (getUserMedia) unavailable',
+            (typeof I18n !== 'undefined'
+                ? I18n.t('camera.gate.unsupported')
+                : 'Browser camera API (getUserMedia) unavailable'),
             CameraAccess._suggestionsFor('unsupported')
         );
         this._setCameraError('camera-error', 'camera api unavailable');
@@ -839,9 +842,29 @@ FocusFlow._applyCalibration = function(data) {
 };
 
 /**
- * Smooth gaze data using exponential moving average + median filter
+ * Smooth gaze data using the extracted Kalman filter, with a median fallback.
  */
 FocusFlow._smoothGaze = function(data) {
+    if (typeof KalmanFilter2D !== 'undefined') {
+        if (!this._gazeKalmanFilter) {
+            this._gazeKalmanFilter = new KalmanFilter2D({
+                processNoise: 0.00005,
+                measureNoise: 400,
+                emaAlpha: 0.18,
+                deadZone: 2
+            });
+        }
+        const smoothed = this._gazeKalmanFilter.update(data.x, data.y);
+        this._smoothedGazeX = smoothed.x;
+        this._smoothedGazeY = smoothed.y;
+        return {
+            x: smoothed.x,
+            y: smoothed.y,
+            _rawX: data._rawX !== undefined ? data._rawX : data.x,
+            _rawY: data._rawY !== undefined ? data._rawY : data.y
+        };
+    }
+
     // Add to sample window
     this._gazeSamples.push({ x: data.x, y: data.y, time: performance.now() });
     if (this._gazeSamples.length > this._gazeSampleWindow) {
@@ -1821,6 +1844,7 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
     }
 
     const strategyNameEl = document.getElementById('ff-strategy-name');
+
     const strategyText = (typeof I18n !== 'undefined')
         ? I18n.translateStrategy(resolved)
         : {
@@ -1835,6 +1859,7 @@ FocusFlow.updateDashboard = function(state, strategy, gazeBlock) {
         cardState.style.borderColor = color;
         cardState.style.boxShadow = `0 0 20px ${color}20`;
         if (nameEl) nameEl.style.color = color;
+
     }
     
     const summary = this.analytics.getSessionSummary();
@@ -1954,10 +1979,13 @@ FocusFlow.shutdown = function() {
         this.visualEffects.reset();
     }
     if (this.perception) {
-        this.perception.destroy();
+    this.perception.destroy();
     }
     if (window.webgazer) {
         webgazer.end();
+    }
+    if (this._gazeKalmanFilter) {
+        this._gazeKalmanFilter.reset();
     }
     console.log('[FocusFlow] Shutdown complete');
 };

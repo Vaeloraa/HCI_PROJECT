@@ -105,16 +105,21 @@ const CameraAccess = {
     },
 
     _summaryFor(code, fallback) {
-        const map = {
-            denied: 'Camera permission was denied',
-            notfound: 'No camera device was found',
-            busy: 'The camera is already in use by another application',
-            insecure: 'This page must be opened via localhost, HTTPS, or a private LAN address',
-            unsupported: 'This browser does not support camera access',
-            constraints: 'The camera does not support the requested settings',
-            unknown: fallback || 'Camera access failed'
+        const t = (key, params) => {
+            if (typeof I18n !== 'undefined') return I18n.t(key, params);
+            return key;
         };
-        return map[code] || map.unknown;
+        const keyMap = {
+            denied: 'camera.error.denied',
+            notfound: 'camera.error.notFound',
+            busy: 'camera.error.inUse',
+            insecure: 'camera.error.security',
+            unsupported: 'camera.gate.unsupported',
+            constraints: 'camera.error.constraints',
+            unknown: 'camera.error.unknown'
+        };
+        const key = keyMap[code] || keyMap.unknown;
+        return t(key, { name: fallback || code || 'camera' });
     },
 
     _suggestionsFor(code) {

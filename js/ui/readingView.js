@@ -68,6 +68,38 @@ The integration of neuroplasticity research with artificial intelligence and bra
 
 In conclusion, neural plasticity is a fundamental property of the brain that enables adaptation, learning, and recovery across the lifespan. From the molecular mechanisms of synaptic change to the macroscopic reorganization of neural circuits following injury, plasticity shapes every aspect of cognitive function. As research continues to uncover the intricate mechanisms underlying plasticity, new opportunities for therapeutic intervention and cognitive enhancement will undoubtedly emerge.`;
 
+const DEFAULT_READING_TEXT_ZH = `理解神经可塑性：大脑持续重塑自己的能力
+
+经验与学习如何改变大脑结构
+
+神经可塑性简介
+
+神经可塑性指的是大脑根据经验、学习和环境变化不断调整自身连接的能力。它让神经元可以形成新的连接，也可以强化或削弱已有连接，从而帮助我们学习新技能、适应新任务，并在受伤后重新组织功能。
+
+过去，人们曾认为大脑在童年之后基本固定。但近几十年的研究表明，成年人的大脑仍然会持续变化。阅读、练习、运动、社交和康复训练都会影响神经连接的强度与组织方式。
+
+学习为什么会改变大脑
+
+当我们反复练习一项能力时，相关神经通路会被更频繁地激活。经常一起激活的神经元更容易建立稳定连接，这会让信息传递更高效。相反，很少使用的连接可能逐渐变弱，帮助大脑减少冗余。
+
+这种变化不仅发生在功能层面，也会体现在结构层面。例如，神经元上的树突棘可能在学习后增多或变大，为长期记忆提供生物基础。
+
+环境与认知储备
+
+丰富的环境会促进大脑发展。多样化的感官刺激、身体活动、社交互动和持续学习，都可能帮助大脑建立更灵活的网络。对成年人来说，保持阅读、思考和运动习惯，也有助于降低认知衰退风险。
+
+认知储备描述的是大脑在面对损伤或老化时，通过替代路径维持功能的能力。教育经历、复杂工作和长期智力活动，都可能提升这种储备。
+
+损伤后的恢复
+
+脑卒中、脑外伤或其他神经损伤后，大脑有时可以通过重新分配任务来恢复部分功能。未受损区域可能接管一部分原本由受损区域完成的工作。康复训练正是利用这种可塑性，通过重复、有目标的练习来促进恢复。
+
+不过，可塑性并不是无限的。年龄、训练时机、身体状态和任务难度都会影响恢复效果。越早、越持续、越有针对性的训练，通常越能帮助大脑建立新的有效连接。
+
+总结
+
+神经可塑性说明，大脑并不是一成不变的器官。它会随着经验和行为不断调整。理解这一点，有助于我们更科学地学习、训练注意力，并设计更好的康复和教育方法。`;
+
 class ReadingView {
     constructor(config) {
         this.config = config;
@@ -111,7 +143,13 @@ class ReadingView {
         this._metaTranslations = {};
         this._allTranslationsVisible = false;
         
-        this._loadRawText(DEFAULT_READING_TEXT, 'default');
+
+        this._loadRawText(this._getDefaultReadingText(), 'default');
+        document.addEventListener('focusflow-lang-change', () => {
+            if (this.sourceLabel !== 'default') return;
+            this.loadDefaultForCurrentLanguage();
+        });
+
         this._bindLayoutListeners();
     }
 
@@ -141,6 +179,27 @@ class ReadingView {
                     headings: this.document.blocks.filter(b => b.type === 'heading').length
                 }
             }));
+        }
+    }
+
+    _getDefaultReadingText() {
+        return (typeof I18n !== 'undefined' && I18n.lang === 'zh')
+            ? DEFAULT_READING_TEXT_ZH
+            : DEFAULT_READING_TEXT;
+    }
+
+    loadDefaultForCurrentLanguage() {
+        this._loadRawText(this._getDefaultReadingText(), 'default');
+        if (typeof FocusFlow !== 'undefined') {
+            if (FocusFlow.analytics) FocusFlow.analytics.resetSession();
+            if (FocusFlow._autoTriggeredForBlock) FocusFlow._autoTriggeredForBlock = new Set();
+            if (FocusFlow._blockSummaryCache) FocusFlow._blockSummaryCache = {};
+            if (FocusFlow._summaryGenerationInProgress) FocusFlow._summaryGenerationInProgress = new Set();
+            if (FocusFlow._assistPrefetchStartedFor) FocusFlow._assistPrefetchStartedFor = new Set();
+            if (FocusFlow.visualEffects) FocusFlow.visualEffects.hideComprehensionCard();
+            FocusFlow._comprehensionCardBlock = -1;
+            if (FocusFlow._initBlockWordCounts) FocusFlow._initBlockWordCounts();
+            if (FocusFlow._precomputeParagraphSummaries) FocusFlow._precomputeParagraphSummaries();
         }
     }
 

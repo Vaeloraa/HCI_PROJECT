@@ -32,8 +32,13 @@ class CalibrationManager {
         
         this.currentPointIndex = 0;
         this.calibrationData = [];  // WebGazer predictions at each point
-        this.samplesPerPoint = 5;   // Collect 5 samples per point
+        this.samplesPerPoint = 25;  // Collect 25 samples per point for robust accuracy
+        this.sampleInterval = 80;   // Sample every 80ms (~12.5 Hz)
         this.currentSamples = [];
+        this.rawSamples = [];       // Unfiltered samples before outlier rejection
+        this._settleDelay = 400;    // ms to wait for gaze to settle on point
+        this._maxWaitPerPoint = 10000; // ms max wait before auto-confirming
+        this._confirmTimer = null;   // timer for auto-confirm / timeout
         this.isCalibrating = false;
         this.isComplete = false;
         
@@ -350,6 +355,11 @@ class CalibrationManager {
         
         // Gaze samples come from WebGazer listener cache (no getCurrentPrediction polling).
         this._stopAutoCollect();
+        setTimeout(() => {
+            if (this.isCalibrating) {
+                this._startAutoCollect();
+            }
+        }, 800);
         
         // Call progress callback
         if (this.onProgress) {
@@ -361,6 +371,93 @@ class CalibrationManager {
 
     _startAutoCollect() {
         this._stopAutoCollect();
+        this.currentSamples = [];
+        this.rawSamples = [];
+        const settleStart = performance.now();
+        let settling = true;
+
+        this._collectInterval = setInterval(() => {
+            const ff = window.FocusFlow;
+            const gaze = ff && ff._calibrationLastGaze;
+
+            // Skip samples during settling period to avoid saccade artifacts
+            if (settling && performance.now() - settleStart < this._settleDelay) {
+                return;
+            }
+            settling = false;
+
+            if (gaze && Number.isFinite(gaze.x) && Number.isFinite(gaze.y)) {
+                this.rawSamples.push({
+                    x: gaze.x,
+                    y: gaze.y,
+                    time: performance.now()
+                });
+
+                // Real-time outlier guard: skip samples too far from running median
+                if (this.rawSamples.length >= 5) {
+                    const recent = this.rawSamples.slice(-5);
+                    const medX = this._computeMedian(recent.map(s => s.x));
+                    const medY = this._computeMedian(recent.map(s => s.y));
+                    const dx = Math.abs(gaze.x - medX);
+                    const dy = Math.abs(gaze.y - medY);
+                    // Accept if within 120px of running median (eyeball jitter threshold)
+                    if (dx < 120 && dy < 120) {
+                        this.currentSamples.push({
+                            x: gaze.x,
+                            y: gaze.y,
+                            time: performance.now()
+                        });
+                    }
+                } else {
+                    // First few samples, accept all
+                    this.currentSamples.push({
+                        x: gaze.x,
+                        y: gaze.y,
+                        time: performance.now()
+                    });
+                }
+
+                // Update progress indicator
+                if (this._statusEl && this.currentSamples.length > 0) {
+                    const pct = Math.min(100, Math.round(this.currentSamples.length / this.samplesPerPoint * 100));
+                    this._statusEl.textContent = 'Collecting... ' + pct + '% (' + this.currentSamples.length + '/' + this.samplesPerPoint + ')';
+                }
+            }
+
+            // Auto-confirm when enough samples collected
+            if (this.currentSamples.length >= this.samplesPerPoint) {
+                this._stopAutoCollect();
+                if (this._statusEl) {
+                    this._statusEl.textContent = 'Completed ' + this.currentSamples.length + ' samples. Auto-confirming...';
+                    this._statusEl.style.color = '#16a34a';
+                }
+                this._confirmTimer = setTimeout(() => {
+                    if (this.isCalibrating) {
+                        this._confirmPoint();
+                    }
+                }, 600);
+            }
+        }, this.sampleInterval);
+
+        // Safety timeout: auto-confirm after max wait even if samples are few
+        this._confirmTimer = setTimeout(() => {
+            if (!this.isCalibrating) return;
+            this._stopAutoCollect();
+            if (this.currentSamples.length >= 3) {
+                if (this._statusEl) {
+                    this._statusEl.textContent = 'Timeout — auto-confirming with ' + this.currentSamples.length + ' samples.';
+                }
+                setTimeout(() => this._confirmPoint(), 400);
+            } else if (this.currentSamples.length > 0) {
+                if (this._statusEl) {
+                    this._statusEl.textContent = 'Low samples (' + this.currentSamples.length + '). Click to proceed anyway.';
+                }
+            } else {
+                if (this._statusEl) {
+                    this._statusEl.textContent = 'No gaze data. Ensure camera is on and you are looking at the point. Click to retry.';
+                }
+            }
+        }, this._maxWaitPerPoint);
     }
 
     _sampleGazeAtConfirm() {
@@ -390,6 +487,87 @@ class CalibrationManager {
             clearTimeout(this._collectTimer);
             this._collectTimer = null;
         }
+        if (this._confirmTimer) {
+            clearTimeout(this._confirmTimer);
+            this._confirmTimer = null;
+        }
+    }
+
+    /**
+     * Compute median of an array of numbers
+     */
+    _computeMedian(arr) {
+        if (!arr || arr.length === 0) return 0;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        if (sorted.length % 2 === 0) {
+            return (sorted[mid - 1] + sorted[mid]) / 2;
+        }
+        return sorted[mid];
+    }
+
+    /**
+     * Compute trimmed mean: discard trimFraction from each end
+     */
+    _computeTrimmedMean(arr, trimFraction) {
+        if (!arr || arr.length === 0) return 0;
+        if (arr.length <= 3) {
+            return arr.reduce((a, b) => a + b, 0) / arr.length;
+        }
+        const sorted = [...arr].sort((a, b) => a - b);
+        const trimCount = Math.floor(sorted.length * trimFraction);
+        const trimmed = sorted.slice(trimCount, sorted.length - trimCount);
+        if (trimmed.length === 0) return sorted[Math.floor(sorted.length / 2)];
+        return trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+    }
+
+    /**
+     * Compute standard deviation
+     */
+    _computeStdDev(arr, mean) {
+        if (!arr || arr.length < 2) return 0;
+        const m = mean !== undefined ? mean : this._computeMedian(arr);
+        const variance = arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1);
+        return Math.sqrt(variance);
+    }
+
+    /**
+     * Filter outlier samples using Median Absolute Deviation (MAD)
+     * Discards samples more than 3 MADs from median — robust to non-normal distributions
+     */
+    _filterOutliers(samples) {
+        if (!samples || samples.length <= 2) return samples || [];
+
+        const xs = samples.map(s => s.x);
+        const ys = samples.map(s => s.y);
+
+        const medX = this._computeMedian(xs);
+        const medY = this._computeMedian(ys);
+
+        // Compute MAD (Median Absolute Deviation)
+        const absDevX = xs.map(x => Math.abs(x - medX));
+        const absDevY = ys.map(y => Math.abs(y - medY));
+        const madX = this._computeMedian(absDevX) * 1.4826; // scale factor for normal consistency
+        const madY = this._computeMedian(absDevY) * 1.4826;
+
+        // Use max of MAD and a floor of 15px to avoid over-filtering when samples are tight
+        const thresholdX = Math.max(madX * 3, 15);
+        const thresholdY = Math.max(madY * 3, 15);
+
+        return samples.filter(s => {
+            return Math.abs(s.x - medX) <= thresholdX && Math.abs(s.y - medY) <= thresholdY;
+        });
+    }
+
+    /**
+     * Compute spatial dispersion of samples (average distance to centroid in px)
+     */
+    _computeDispersion(samples) {
+        if (!samples || samples.length < 2) return 0;
+        const cx = samples.reduce((s, d) => s + d.x, 0) / samples.length;
+        const cy = samples.reduce((s, d) => s + d.y, 0) / samples.length;
+        const distances = samples.map(s => Math.sqrt((s.x - cx) ** 2 + (s.y - cy) ** 2));
+        return distances.reduce((a, b) => a + b, 0) / distances.length;
     }
 
     /**
@@ -446,56 +624,123 @@ class CalibrationManager {
      */
     _confirmPoint() {
         if (!this.isCalibrating) return;
-        
+
         this._stopAutoCollect();
 
         const pt = this.points[this.currentPointIndex];
-        this.currentSamples = this._sampleGazeAtConfirm();
-        
-        // Calculate the center of the calibration point in viewport coordinates
         const viewportX = pt.x * window.innerWidth;
         const viewportY = pt.y * window.innerHeight;
-        
+
+        // Use quality-filtered samples if available
+        const filtered = this.currentSamples.length > 0
+            ? this._filterOutliers(this.currentSamples)
+            : [];
+
+        let finalX, finalY, robustX, robustY, trimmedX, trimmedY, stdDevX, stdDevY, dispersion;
+        let statusColor = '#16a34a';
+        let statusText;
+
+        if (filtered.length >= 3) {
+            // ---- Sufficient quality samples: robust computation ----
+            const xs = filtered.map(s => s.x);
+            const ys = filtered.map(s => s.y);
+            robustX = this._computeMedian(xs);
+            robustY = this._computeMedian(ys);
+            trimmedX = this._computeTrimmedMean(xs, 0.2);
+            trimmedY = this._computeTrimmedMean(ys, 0.2);
+            finalX = (robustX + trimmedX) / 2;
+            finalY = (robustY + trimmedY) / 2;
+            stdDevX = this._computeStdDev(xs, robustX);
+            stdDevY = this._computeStdDev(ys, robustY);
+            dispersion = this._computeDispersion(filtered);
+            statusText = 'Collected (' + filtered.length + ' samples)';
+        } else if (filtered.length > 0) {
+            // ---- 1-2 samples: use simple average ----
+            const xs = filtered.map(s => s.x);
+            const ys = filtered.map(s => s.y);
+            robustX = this._computeMedian(xs);
+            robustY = this._computeMedian(ys);
+            trimmedX = robustX;
+            trimmedY = robustY;
+            finalX = robustX;
+            finalY = robustY;
+            stdDevX = 0;
+            stdDevY = 0;
+            dispersion = 0;
+            statusText = '⚠ Collected (' + filtered.length + ' sample(s) — low precision)';
+            statusColor = '#f59e0b';
+        } else {
+            // ---- 0 samples: use target position as fallback, ALWAYS advance ----
+            robustX = viewportX;
+            robustY = viewportY;
+            trimmedX = viewportX;
+            trimmedY = viewportY;
+            finalX = viewportX;
+            finalY = viewportY;
+            stdDevX = 0;
+            stdDevY = 0;
+            dispersion = 0;
+            statusText = '⚠ No gaze data — skipped';
+            statusColor = '#ef4444';
+
+            console.warn('[Calibration] Point ' + (this.currentPointIndex + 1) +
+                ': no gaze samples collected. Recording target position as fallback.');
+        }
+
         // Store calibration data
         this.calibrationData.push({
             pointIndex: this.currentPointIndex,
             targetX: viewportX,
             targetY: viewportY,
             targetLabel: pt.label,
-            samples: [...this.currentSamples],
-            averageX: this.currentSamples.length > 0 
-                ? this.currentSamples.reduce((s, d) => s + d.x, 0) / this.currentSamples.length 
-                : viewportX,
-            averageY: this.currentSamples.length > 0 
-                ? this.currentSamples.reduce((s, d) => s + d.y, 0) / this.currentSamples.length 
-                : viewportY
+            samples: filtered.length > 0 ? [...filtered] : [],
+            rawSampleCount: this.currentSamples.length,
+            filteredSampleCount: filtered.length,
+            medianX: robustX,
+            medianY: robustY,
+            trimmedMeanX: trimmedX,
+            trimmedMeanY: trimmedY,
+            averageX: finalX,
+            averageY: finalY,
+            stdDevX: stdDevX || 0,
+            stdDevY: stdDevY || 0,
+            dispersion: dispersion || 0
         });
-        
-        // Show confirmation flash
+
+        // Show status
         if (this._statusEl) {
-            this._statusEl.textContent = 'Collected';
-            this._statusEl.style.color = '#16a34a';
+            this._statusEl.textContent = statusText;
+            this._statusEl.style.color = statusColor;
         }
-        
-        // Briefly flash the point green
+
+        // Briefly flash the point green (or yellow if low quality)
         const currentPointEl = this._pointEls[this.currentPointIndex];
         if (currentPointEl) {
-            currentPointEl.style.borderColor = 'rgba(74, 222, 128, 0.8)';
-            currentPointEl.style.background = 'rgba(74, 222, 128, 0.15)';
-            currentPointEl.style.boxShadow = '0 0 60px rgba(74, 222, 128, 0.2)';
+            currentPointEl.style.borderColor = filtered.length >= 3
+                ? 'rgba(74, 222, 128, 0.8)'
+                : 'rgba(251, 191, 36, 0.8)';
+            currentPointEl.style.background = filtered.length >= 3
+                ? 'rgba(74, 222, 128, 0.15)'
+                : 'rgba(251, 191, 36, 0.1)';
+            currentPointEl.style.boxShadow = filtered.length >= 3
+                ? '0 0 60px rgba(74, 222, 128, 0.2)'
+                : '0 0 60px rgba(251, 191, 36, 0.2)';
         }
-        
+
         if (this.debug) {
-            console.log(`[Calibration] Point ${this.currentPointIndex + 1} confirmed with ${this.currentSamples.length} samples`);
+            console.log('[Calibration] Point ' + (this.currentPointIndex + 1) +
+                ' confirmed: ' + filtered.length + '/' + this.currentSamples.length +
+                ' samples | pos=(' + finalX.toFixed(1) + ',' + finalY.toFixed(1) + ')' +
+                (stdDevX ? ' | \u03c3=(' + stdDevX.toFixed(1) + ',' + stdDevY.toFixed(1) + 'px)' : ''));
         }
-        
-        // Move to next point after a brief delay
+
+        // ALWAYS move to next point after a brief delay
         setTimeout(() => {
             if (this._statusEl) {
                 this._statusEl.style.color = '#64748b';
             }
             this._showPoint(this.currentPointIndex + 1);
-        }, 200);
+        }, 300);
     }
 
     /**

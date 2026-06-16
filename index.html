@@ -109,7 +109,9 @@
             <!-- The reading content rendered by ReadingView -->
             <div class="ff-reading-content" id="ff-reading-content">
                 <div class="ff-reading-loading" data-i18n="reading.loading">Loading reading content...</div>
-            </div>
+                    </div>
+                   
+                </div>
             
             <!-- Progress bar -->
             <div class="ff-reading-progress-bar">
@@ -733,10 +735,10 @@
                             <button class="ff-timer-btn" id="ff-timer-mode" onclick="toggleTimerMode()" data-i18n-title="timer.modeUpTitle" title="Toggle count-up / countdown">⏱</button>
                             <button class="ff-timer-btn" id="ff-timer-reset" onclick="resetTimer()" data-i18n-title="timer.reset" title="Reset">↺</button>
                         </div>
-                        <input type="file" id="ff-file-input" accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.csv,.json,.xml,.html,.cpp,.c,.h,.py,.js,.ts,.css,.java,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg" style="display:none" multiple onchange="handleFileImport(event)">
-                        <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">Import Text</button>
-                        <button id="btn-paragraph-debug" class="ff-btn ff-btn-secondary" onclick="toggleParagraphDebug()" data-i18n="btn.paragraphDebug" data-i18n-title="debug.paragraph.toggleTitle" title="Show paragraph split boundaries">¶ Debug</button>
                         <button id="btn-session-report" class="ff-btn ff-btn-secondary" onclick="showSessionReport()" data-i18n="btn.sessionReport">Session Report</button>
+                        <input type="file" id="ff-file-input" accept=".txt,.md,.pdf,.doc,.docx,.ppt,.pptx,.csv,.json,.xml,.html,.cpp,.c,.h,.py,.js,.ts,.css,.java,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg" style="display:none" multiple onchange="handleFileImport(event)">
+                        <button id="btn-import" class="ff-btn ff-btn-secondary" onclick="document.getElementById('ff-file-input').click()" data-i18n="btn.import">📂 Import File</button>
+                        <button id="btn-paragraph-debug" class="ff-btn ff-btn-secondary" onclick="toggleParagraphDebug()" data-i18n="btn.paragraphDebug" data-i18n-title="debug.paragraph.toggleTitle" title="Show paragraph split boundaries">¶ Debug</button>
                         <button id="btn-reset" class="ff-btn ff-btn-secondary" onclick="resetAll()" data-i18n="btn.reset">Reset</button>
                     </div>
                 `;

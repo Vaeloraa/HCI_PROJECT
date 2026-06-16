@@ -9,6 +9,9 @@
  *   Center-Left | Center-Center | Center-Right
  *   Bottom-Left | Bottom-Center | Bottom-Right
  * 
+ * Includes hysteresis buffer to prevent rapid region switching
+ * caused by eye jitter near grid boundaries.
+ * 
  * HCI Final Project - Member A
  */
 
@@ -24,6 +27,13 @@ class GazeRegionMapping {
         
         // Current region
         this.currentRegion = { row: 1, col: 1, name: 'center-center' };
+        
+        // Hysteresis state: require N consecutive frames in new region before switching
+        this._candidateRegion = null;
+        this._candidateCount = 0;
+        this._hysteresisFrames = 4;      // frames required before switching
+        this._hysteresisDebounceMs = 60;  // debounce within this window (via timestamp)
+        this._lastCandidateTime = 0;
         
         // Region dwell times
         this.regionDwellTimes = {};
@@ -43,6 +53,11 @@ class GazeRegionMapping {
         // Grid configuration
         this.gridRows = 3;
         this.gridCols = 3;
+        
+        // Smooth region tracking (EMA on region grid indices for stable output)
+        this._smoothedRow = 1;
+        this._smoothedCol = 1;
+        this._regionSmoothAlpha = 0.35;
     }
 
     /**
@@ -67,8 +82,16 @@ class GazeRegionMapping {
         const cellWidth = viewportWidth / this.gridCols;
         const cellHeight = viewportHeight / this.gridRows;
         
-        const col = Math.min(Math.floor(x / cellWidth), this.gridCols - 1);
-        const row = Math.min(Math.floor(y / cellHeight), this.gridRows - 1);
+        const rawCol = Math.min(Math.floor(x / cellWidth), this.gridCols - 1);
+        const rawRow = Math.min(Math.floor(y / cellHeight), this.gridRows - 1);
+        
+        // EMA smoothing on grid indices (reduces boundary oscillation)
+        this._smoothedRow = this._regionSmoothAlpha * rawRow + (1 - this._regionSmoothAlpha) * this._smoothedRow;
+        this._smoothedCol = this._regionSmoothAlpha * rawCol + (1 - this._regionSmoothAlpha) * this._smoothedCol;
+        
+        // Round to nearest grid cell
+        const row = Math.round(this._smoothedRow);
+        const col = Math.round(this._smoothedCol);
         
         // Map to region name
         const rowNames = ['top', 'center', 'bottom'];
@@ -76,7 +99,39 @@ class GazeRegionMapping {
         const regionName = rowNames[row] + '-' + colNames[col];
         
         const prevRegion = this.currentRegion;
-        this.currentRegion = { row, col, name: regionName };
+        
+        // ---- Hysteresis: only switch region if the new one persists ----
+        if (regionName !== this.currentRegion.name) {
+            if (this._candidateRegion === regionName) {
+                // Same candidate — increment count
+                this._candidateCount++;
+                this._lastCandidateTime = now;
+                
+                if (this._candidateCount >= this._hysteresisFrames) {
+                    // Candidate confirmed — do the actual region switch
+                    this.currentRegion = { row, col, name: regionName };
+                    this._candidateRegion = null;
+                    this._candidateCount = 0;
+                } else {
+                    // Still collecting votes — remain in old region
+                    return;
+                }
+            } else {
+                // New candidate region or expired candidate
+                if (this._candidateRegion && (now - this._lastCandidateTime) > this._hysteresisDebounceMs * 2) {
+                    // Previous candidate expired, reset
+                }
+                this._candidateRegion = regionName;
+                this._candidateCount = 1;
+                this._lastCandidateTime = now;
+                // Remain in old region
+                return;
+            }
+        } else {
+            // Back to current region — reset candidate
+            this._candidateRegion = null;
+            this._candidateCount = 0;
+        }
         
         // Track dwell time per region
         if (this.currentRegion.name !== prevRegion.name) {
@@ -178,6 +233,11 @@ class GazeRegionMapping {
         this.gazeConfidence = 0;
         this.isValid = false;
         this.currentRegion = { row: 1, col: 1, name: 'center-center' };
+        this._candidateRegion = null;
+        this._candidateCount = 0;
+        this._lastCandidateTime = 0;
+        this._smoothedRow = 1;
+        this._smoothedCol = 1;
         this.regionDwellTimes = {};
         this._regionEntryTimes = {};
         this.gazeTrail = [];

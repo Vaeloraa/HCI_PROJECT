@@ -51,14 +51,14 @@ class StateMachine {
         this._maxHistoryLength = 1000;
 
         this.thresholds = {
-            distractionNoFace: 3000,
-            distractionLeaveReadingMouse: 4000,
-            distractionLeaveReadingGaze: 8000,
-            distractionGazeScatter: 280,
-            distractionGazeScatterTime: 3000,
-            strugglingDwellTime: 8000,
-            normalTransitionCooldown: 2500,
-            quietReadMin: 1500
+            distractionNoFace: 6000,
+            distractionLeaveReadingMouse: 5000,
+            distractionLeaveReadingGaze: 15000,
+            distractionGazeScatter: 550,
+            distractionGazeScatterTime: 6000,
+            strugglingDwellTime: 12000,
+            normalTransitionCooldown: 4000,
+            quietReadMin: 2000
         };
 
         this.version = '3.8-paragraph-dwell-reset';
@@ -126,7 +126,15 @@ class StateMachine {
         const moving = !!features.isMoving;
         const scrolling = !!features.isScrolling;
         const facePresent = features.facePresent === true;
-        const recentlyActive = moving || scrolling || idle < 5000;
+
+        // In gaze mode, WebGazer producing coordinates implies a face is tracked.
+        // Requiring facePresent at every frame causes oscillation when tracker flickers.
+        const engagedOnContent = inPanel && onRead;
+
+        // Gaze mode: gaze on content is itself the activity signal — no mouse required.
+        const recentlyActive = gazeMode
+            ? (engagedOnContent || moving || scrolling || idle < 8000)
+            : (moving || scrolling || idle < 5000);
 
         const stuckOnParagraph = inPanel && onRead &&
             dwell >= T.strugglingDwellTime &&
@@ -151,8 +159,6 @@ class StateMachine {
         const clearlyDistracted = gazeMode
             ? (faceAbsent || leftReadingArea || gazeScattered)
             : leftReadingArea;
-
-        const engagedOnContent = inPanel && onRead && (!gazeMode || facePresent);
 
         const quietlyReading = engagedOnContent &&
             dwell >= T.quietReadMin &&

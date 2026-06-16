@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -150,7 +150,7 @@
                         <span class="ff-state-icon" id="ff-state-icon">🧠</span>
                         <div class="ff-state-info">
                             <span class="ff-state-label" data-i18n="state.cognitive">认知状态</span>
-                            <span class="ff-state-name" id="ff-state-name">Normal</span>
+                            <span class="ff-state-name" id="ff-state-name">Focus</span>
                         </div>
                         <div class="ff-state-timer">
                             <span id="ff-state-duration">0.0</span>s
@@ -1497,8 +1497,15 @@
             updateTimeline();
             
             // Log
-            const prevName = detail.previousState ? detail.previousState.name : 'None';
-            log('🔄', `${prevName} → ${state.name}`);
+            const fmtState = (s) => {
+                if (!s || !s.name) {
+                    return (typeof I18n !== 'undefined' ? I18n.t('state.waitingChanges') : 'None');
+                }
+                return (typeof I18n !== 'undefined')
+                    ? I18n.translateDisplayState(s.name, s.duration || 0)
+                    : s.name;
+            };
+            log('🔄', `${fmtState(detail.previousState)} → ${fmtState(state)}`);
         }
 
         // ====== UI UPDATE ======

@@ -180,7 +180,7 @@ const SessionReport = {
             .filter((item) => item.percent > 0)
             .map((item) => {
                 const stateLabel = (typeof I18n !== 'undefined')
-                    ? I18n.translateState(item.state)
+                    ? I18n.translateDisplayState(item.state, item.durationMs || 0)
                     : item.state;
                 const color = colors[item.state] || '#64748b';
                 const seconds = (item.durationMs / 1000).toFixed(1);

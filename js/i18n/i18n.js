@@ -133,7 +133,7 @@ const I18n = {
             'state.focusedReading': 'Focused reading',
             'state.noIntervention': 'No intervention',
             'state.waitingChanges': 'Waiting for state changes...',
-            'state.Normal': 'Normal',
+            'state.Normal': 'Focus',
             'state.Distracted': 'Distracted',
             'state.Struggling': 'Struggling',
             'state.Focus': 'Focus',
@@ -621,10 +621,35 @@ const I18n = {
         });
     },
 
+    getDisplayStateName(stateName, durationMs = 0) {
+        if (typeof FocusFlow !== 'undefined' &&
+            FocusFlow.decision &&
+            FocusFlow.decision.interventionStrategy) {
+            return FocusFlow.decision.interventionStrategy.getDisplayState({
+                name: stateName,
+                duration: durationMs
+            });
+        }
+        switch (stateName) {
+            case 'Normal':
+                return 'Focus';
+            case 'Distracted':
+                return durationMs < 6000 ? 'LowDistraction' : 'HighDistraction';
+            case 'Struggling':
+                return durationMs < 8000 ? 'LowStruggling' : 'HighStruggling';
+            default:
+                return stateName || 'Idle';
+        }
+    },
+
     translateState(name) {
         return this.t(`state.${name}`, {}) !== `state.${name}`
             ? this.t(`state.${name}`)
             : name;
+    },
+
+    translateDisplayState(stateName, durationMs = 0) {
+        return this.translateState(this.getDisplayStateName(stateName, durationMs));
     },
 
     translateStateDesc(name) {

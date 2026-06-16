@@ -222,7 +222,10 @@ class LLMSummaryManager {
     }
 
     _buildInsightStats(report, lang) {
-        const translateState = (state) => {
+        const translateState = (state, durationMs = 0) => {
+            if (typeof I18n !== 'undefined' && typeof I18n.translateDisplayState === 'function') {
+                return I18n.translateDisplayState(state, durationMs);
+            }
             if (typeof I18n !== 'undefined' && typeof I18n.translateState === 'function') {
                 return I18n.translateState(state);
             }
@@ -240,7 +243,7 @@ class LLMSummaryManager {
             comprehensionAssistManual: report.comprehensionAssistManual || 0,
             comprehensionAssistStruggle: report.comprehensionAssistStruggle || 0,
             stateDistribution: (report.stateDistribution || []).slice(0, 6).map((item) => ({
-                state: translateState(item.state),
+                state: translateState(item.state, item.durationMs || 0),
                 percent: item.percent
             })),
             language: lang === 'zh' ? 'zh' : 'en'

@@ -775,7 +775,11 @@ FocusFlow.onGazeData = function(data, elapsedTime) {
     if (this.debugPanel && this.debugPanel.isVisible()) {
         this.debugPanel.setGaze(data.x, data.y);
         if (gazeBlock) this.debugPanel.setBlock(gazeBlock.index, gazeBlock.blockId);
-        this.debugPanel.setCognitiveState(currentState.name);
+        this.debugPanel.setCognitiveState(
+            (typeof I18n !== 'undefined')
+                ? I18n.translateDisplayState(currentState.name, currentState.duration || 0)
+                : currentState.name
+        );
         this.debugPanel.setFocusMode(this.focusMode ? this.focusMode.getCurrentMode() : 'standard');
         const wpm = this.analytics ? this.analytics.getLastReadingSpeed() : 0;
         this.debugPanel.setWpm(wpm);
